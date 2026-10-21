@@ -1,0 +1,11 @@
+{
+  "alwaysAllow": ["list_threads", "read_thread", "list_scheduled_tasks"],
+  "allowInsideWorkingDirectory": ["read", "grep", "find", "ls"],
+  "allowedBashCommands": [
+    "ls( .*)?",
+    "git (status|log|diff|show)( .*)?"
+  ],
+  "excludedBashCommands": [
+    "git (diff|log|show)( .*)? --o.*"
+  ]
+}
