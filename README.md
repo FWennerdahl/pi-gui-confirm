@@ -34,24 +34,28 @@ by single spaces. Lines with `$`, backticks, `>`, `<`, `(`, `)`, `{` or `}` alwa
 
 ### Paths in shell commands
 
-In `allowedBashCommands`, `{path}` stands for one word and `{paths}` for one or more words that must
-be paths inside the session folder:
+An allowed command also needs every argument that could be a path to stay inside the session folder.
+Which arguments a program reads as paths isn't known, so every argument is checked as if it were one:
 
 ```json
-"allowedBashCommands": ["cd({path})?", "ls({paths})?"]
+"allowedBashCommands": ["cd( .*)?", "ls( .*)?"]
 ```
 
-- `cd` with no path or a path inside the session folder is allowed; `cd /` asks.
-- Unquoted globs (`*.scala`) are checked as paths wherever they appear. `.*` and globs next to `..` ask.
+- `ls -la stubs` is allowed; `ls /etc`, `ls ..` and `ls link` (a symlink pointing outside) ask.
+- Flags pass. For `--name=value` the value is checked; a flag with something path-like attached
+  (`-f/etc/passwd`) asks.
+- Quotes don't matter: `ls "/etc"` asks too. Arguments that aren't paths but look like paths outside
+  the folder ask as well, e.g. the search pattern in `grep -r "/api/" .`.
+- Unquoted globs (`*.scala`) are checked like paths; `.*` and globs next to `..` ask.
 - `~` and `~/…` are expanded; `~user`, `~+`, `~-` and zsh's `=cmd` ask.
 - The folder each command runs in must be inside the session folder too. `cd` moves it when it runs
   for certain and goes to an existing folder; otherwise every later command asks
   (e.g. `grep -q x f && cd stubs; ls ..`).
 
-Write patterns so that other parts can't take the place of paths: with `ls( .*)?({paths})?`, `.*`
-swallows `/etc` in `ls /etc .`. Leave out options whose value is a file (`grep -f`), and options that
-follow symlinks while recursing (`grep -R`, `ls -L`). A broader pattern for the same command (`ls( .*)?`)
-still allows anything it matches.
+This only limits where commands look, not what they do: leave out commands that write or run other
+programs, and flags that follow symlinks while recursing (`grep -R`, `ls -L`), e.g. with
+`excludedBashCommands`. Paths that don't exist are judged by their text, so don't allow commands that
+create files (`touch`, `mkdir`): `touch link/new` would create a file outside through a symlink.
 
 Every shell command asks when `BASH_ENV` is set, or when `shellPath` is a shell other than bash or zsh.
 Trusted as your own configuration: `shellCommandPrefix` in Pi's settings and zsh's `~/.zshenv`. They

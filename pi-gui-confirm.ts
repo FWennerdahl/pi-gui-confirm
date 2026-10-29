@@ -6,8 +6,8 @@
  *   alwaysAllow                 tool names that never ask
  *   allowInsideWorkingDirectory tool names that don't ask when their `path` is inside the session folder
  *     (tool names may use `*` as a wildcard, e.g. "mcp__grafana__get_*")
- *   allowedBashCommands         regular expressions for shell commands that don't ask; {path} and {paths}
- *                               mark words that must be paths inside the session folder
+ *   allowedBashCommands         regular expressions for shell commands that don't ask, as long as
+ *                               every argument that could be a path stays inside the session folder
  *   excludedBashCommands        regular expressions for shell commands that ask even if allowed above
  * Each shell command in a pipe or list is checked separately, with quotes and escapes removed and words
  * joined by single spaces. A pattern must match the whole command. See README.md for the path rules.
@@ -19,7 +19,7 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-interface AllowList {
+export interface AllowList {
   alwaysAllow: string[];
   allowInsideWorkingDirectory: string[];
   allowedBashCommands: RegExp[];
@@ -50,25 +50,26 @@ function stringList(value: unknown, field: string): string[] {
 
 function regexList(value: unknown, field: string): RegExp[] {
   return stringList(value, field).map((pattern) => {
-    let n = 0;
-    const source = pattern.replace(/\{paths?\}/g, (token) =>
-      `(?<__path${n++}>${token === "{path}" ? " \\S+" : "(?: \\S+)+"})`);
     try {
-      return new RegExp(`^(?:${source})$`, "d"); // "d": capture positions, to find the path words
+      return new RegExp(`^(?:${pattern})$`);
     } catch {
       throw new Error(`"${field}" has an invalid regular expression: ${pattern}`);
     }
   });
 }
 
-function loadAllowList(): AllowList {
-  const config = JSON.parse(readFileSync(configPath(), "utf8"));
+/** Checks a parsed config and compiles its patterns. Throws if it is invalid. */
+export function parseAllowList(config: any): AllowList {
   return {
     alwaysAllow: stringList(config.alwaysAllow, "alwaysAllow"),
     allowInsideWorkingDirectory: stringList(config.allowInsideWorkingDirectory, "allowInsideWorkingDirectory"),
     allowedBashCommands: regexList(config.allowedBashCommands, "allowedBashCommands"),
     excludedBashCommands: regexList(config.excludedBashCommands, "excludedBashCommands"),
   };
+}
+
+function loadAllowList(): AllowList {
+  return parseAllowList(JSON.parse(readFileSync(configPath(), "utf8")));
 }
 
 function escapeRegExp(text: string): string {
@@ -83,7 +84,7 @@ function matchesAny(patterns: string[], toolName: string): boolean {
 
 type Separator = "start" | ";" | "&&" | "||" | "|" | "&";
 
-interface Word {
+export interface Word {
   /** The word with quotes and escapes removed; whitespace inside it is replaced by placeholders. */
   text: string;
   /** Starts with an unquoted, unescaped character, so a leading ~ or = is expanded by the shell. */
@@ -92,12 +93,10 @@ interface Word {
   unquotedGlob: boolean;
 }
 
-interface ShellCommand {
+export interface ShellCommand {
   words: Word[];
   /** The words joined by single spaces: what the patterns are matched against. */
   text: string;
-  /** Where each word starts in `text`. */
-  offsets: number[];
   before: Separator;
   after: Separator | "end";
 }
@@ -115,7 +114,7 @@ function unhide(text: string): string {
  * substitutions, variables, redirections, subshells, groups or syntax errors.
  * Callers must treat undefined as "ask".
  */
-function parseBashCommands(commandLine: string): ShellCommand[] | undefined {
+export function parseBashCommands(commandLine: string): ShellCommand[] | undefined {
   // Ask on characters this parser can't represent exactly: its own whitespace placeholders, and
   // whitespace other than space, tab and newline, which JavaScript's \s matches but the shell treats
   // as part of a word.
@@ -143,13 +142,7 @@ function parseBashCommands(commandLine: string): ShellCommand[] | undefined {
     unquotedGlob = false;
   };
   const endCommand = (after: Separator | "end") => {
-    const offsets: number[] = [];
-    let offset = 0;
-    for (const w of words) {
-      offsets.push(offset);
-      offset += w.text.length + 1;
-    }
-    commands.push({ words, text: words.map((w) => w.text).join(" "), offsets, before, after });
+    commands.push({ words, text: words.map((w) => w.text).join(" "), before, after });
     words = [];
     if (after !== "end") before = after;
   };
@@ -227,27 +220,31 @@ function wordPath(word: Word, base: string): string | undefined {
   return resolve(base, text);
 }
 
-/** The words a pattern captured with {path} or {paths}, or undefined if it doesn't match. */
-function pathWords(pattern: RegExp, command: ShellCommand): Word[] | undefined {
-  const match = pattern.exec(command.text);
-  if (!match) return undefined;
-  const ranges = Object.entries(match.indices?.groups ?? {})
-    .filter(([name, range]) => name.startsWith("__path") && range !== undefined)
-    .map(([, range]) => range!);
-  return command.words.filter((_, i) =>
-    ranges.some(([start, end]) => command.offsets[i] > start && command.offsets[i] < end));
+/** Whether a command is allowed, with its arguments resolved from `base` (the physical folder it runs in). */
+function commandIsAllowed(command: ShellCommand, allowList: AllowList, root: string, base: string): boolean {
+  if (!allowList.allowedBashCommands.some((pattern) => pattern.test(command.text))) return false;
+  if (allowList.excludedBashCommands.some((pattern) => pattern.test(command.text))) return false;
+  return command.words.slice(1).every((word) => argumentIsInside(word, root, base));
 }
 
-/** Whether a command is allowed, with its paths resolved from `base` (the physical folder it runs in). */
-function commandIsAllowed(command: ShellCommand, allowList: AllowList, root: string, base: string): boolean {
-  if (allowList.excludedBashCommands.some((pattern) => pattern.test(command.text))) return false;
-  const isInsideRoot = (word: Word) => {
-    const path = wordPath(word, base);
-    return path !== undefined && isInside(root, path);
-  };
-  // Globs expand to paths wherever they are, so they are checked in every position.
-  if (!command.words.slice(1).filter((word) => word.unquotedGlob).every(isInsideRoot)) return false;
-  return allowList.allowedBashCommands.some((pattern) => pathWords(pattern, command)?.every(isInsideRoot));
+/**
+ * Whether an argument stays inside the session folder if it is a path. Which arguments a program reads
+ * as paths isn't known, so every argument is checked as if it were one. Words that aren't paths
+ * (flags, search patterns) almost always pass, since they resolve inside the folder too.
+ */
+function argumentIsInside(word: Word, root: string, base: string): boolean {
+  const text = unhide(word.text);
+  if (text.startsWith("-")) {
+    const equals = text.indexOf("=");
+    if (text.startsWith("--") && equals !== -1) {
+      // --name=value: the value may be a path. Treated as a word of its own, so a leading ~ counts.
+      return argumentIsInside({ ...word, text: word.text.slice(equals + 1), plainStart: true }, root, base);
+    }
+    // A flag, unless a value is attached to it (-f/etc/passwd): where that starts can't be known.
+    return !/[/~]|\.\./.test(text);
+  }
+  const path = wordPath(word, base);
+  return path !== undefined && isInside(root, path);
 }
 
 /** Where a cd goes (following the path by text, as cd does), or undefined if that can't be known in advance. */
@@ -273,7 +270,7 @@ function cdTarget(words: Word[], dir: string, oldDir: string | undefined): strin
 }
 
 /** Whether bash commands run in a shell this check understands, with no startup file that could change them. */
-function shellIsSupported(cwd: string): boolean {
+export function shellIsSupported(cwd: string): boolean {
   if (process.env.BASH_ENV) return false; // bash runs this file first, and it can redefine any command
   try {
     const shellPath = SettingsManager.create(cwd).getShellPath();
@@ -288,7 +285,7 @@ function shellIsSupported(cwd: string): boolean {
  * folder when it runs for certain and its target is a folder it can enter; when that can't be known,
  * the folder becomes unknown and every later command asks.
  */
-function bashIsAllowed(commands: ShellCommand[], allowList: AllowList, root: string): boolean {
+export function bashIsAllowed(commands: ShellCommand[], allowList: AllowList, root: string): boolean {
   let dir: string | undefined = realOrResolved(root); // bash starts in the physical folder
   let oldDir: string | undefined; // where `cd -` goes
   let dirIfFailed: string | undefined = dir; // where the shell is if the last cd failed after all
