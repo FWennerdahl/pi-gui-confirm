@@ -3,7 +3,7 @@
  * command does. pi-gui-confirm.ts shows it as the approval dialog's title, above the exact command.
  * Kept separate from pi-gui-confirm.ts so a failure here can't disable the confirmation dialog.
  */
-import { createBashTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createBashTool, type ExtensionAPI, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
 const SUMMARY_DESCRIPTION =
@@ -11,7 +11,9 @@ const SUMMARY_DESCRIPTION =
   '(at most about 80 characters, e.g. "List files changed since the last review").';
 
 export default function (pi: ExtensionAPI) {
-  const builtin = createBashTool(process.cwd());
+  // prepareArguments is left out: bash doesn't have one (it's undefined), and its type returns the
+  // parameters without `summary`, which doesn't fit this tool.
+  const { prepareArguments: _prepareArguments, ...builtin } = createBashTool(process.cwd());
 
   pi.registerTool({
     ...builtin,
@@ -22,7 +24,12 @@ export default function (pi: ExtensionAPI) {
     execute: async (toolCallId, params, signal, onUpdate, ctx) => {
       const { summary: _summary, ...bashParams } = params;
       // Built per call with the session's folder: pi-gui runs threads for several folders in one process.
-      return createBashTool(ctx.cwd).execute(toolCallId, bashParams, signal, onUpdate);
+      // Pass the shell settings on, as pi does for its built-in bash tool, which this one replaces.
+      const settings = SettingsManager.create(ctx.cwd);
+      return createBashTool(ctx.cwd, {
+        shellPath: settings.getShellPath(),
+        commandPrefix: settings.getShellCommandPrefix(),
+      }).execute(toolCallId, bashParams, signal, onUpdate);
     },
   });
 }

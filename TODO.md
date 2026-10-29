@@ -87,14 +87,6 @@ and `AGENTS.md` as context, looking for:
 - test cases that pass for the wrong reason (easier once the check reports a cause, see above);
 - places where the code is hard to follow.
 
-## Fix the type error in bash-summary.ts
-
-`tsc` (`npm run typecheck`) reports TS2345 at `pi.registerTool({ ...builtin, … })`: the
-`prepareArguments` copied from the built-in bash tool returns `{ command, timeout }`, but the
-replacement tool's parameters also require `summary`. The error is old (also there before the path
-check work). Likely fix: don't copy `prepareArguments`, or wrap it so it keeps `summary`; check what
-`prepareArguments` does in the built-in tool first.
-
 ## Allow edits and writes in safe paths
 
 `edit` and `write` always ask (`ALWAYS_ASK` in `pi-gui-confirm.ts`). pi's tools themselves can write

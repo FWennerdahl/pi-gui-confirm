@@ -75,8 +75,7 @@ npm test            # node --test *.test.ts
 
 - `npm test` needs Node 22.18 or later (it runs TypeScript directly). Pi's shell doesn't load nvm;
   there, prefix with `PATH=~/.nvm/versions/node/v24.15.0/bin:$PATH`.
-- Known exception: `tsc` reports TS2345 in `bash-summary.ts` until that is fixed (TODO.md). No other
-  errors are acceptable.
+- `tsc` must report no errors.
 - Every change in behavior gets test cases in `pi-gui-confirm.test.ts`, with a short comment on
   cases whose outcome isn't obvious. Tests use their own config and fixture folders, never
   `pi-gui-confirm.json`.
@@ -93,6 +92,6 @@ npm test            # node --test *.test.ts
 ## Keeping this file up to date
 
 This file describes decisions, not history. When a decision or change makes part of it wrong or
-incomplete (a design decision is reversed, a check is added, the file layout changes, the
-`bash-summary.ts` exception is fixed), propose the matching edit to `AGENTS.md` in the same piece of
-work, and point it out to the maintainer.
+incomplete (a design decision is reversed, a check is added, the file layout changes, a planned
+change from TODO.md lands), propose the matching edit to `AGENTS.md` in the same piece of work, and
+point it out to the maintainer.
