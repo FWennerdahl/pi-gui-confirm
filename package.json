@@ -6,7 +6,8 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "typecheck": "tsc"
+    "typecheck": "tsc",
+    "test": "node --test *.test.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
