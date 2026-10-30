@@ -1,12 +1,46 @@
 {
-  "alwaysAllow": ["list_threads", "read_thread", "list_scheduled_tasks"],
+  "alwaysAllow": [
+    "list_threads",
+    "read_thread",
+    "list_scheduled_tasks",
+    "mcp__slack__slack_search_public_and_private",
+    "mcp__slack__slack_read_thread",
+    "mcp__slack__slack_read_file",
+    "mcp__linear__get_issue"
+  ],
   "allowInsideWorkingDirectory": ["read", "grep", "find", "ls"],
   "allowedBashCommands": [
     "ls( .*)?",
-    "git (status|log|diff|show)( .*)?"
+    "git (status|log|diff|show|blame|ls-files|rev-parse)( .*)?",
+    "head( .*)?",
+    "tail( .*)?",
+    "cat( .*)?",
+    "wc( .*)?",
+    "pwd( .*)?",
+    "cd( .*)?",
+    "echo( .*)?"
   ],
   "excludedBashCommands": [
-    "git (diff|log|show)( .*)? --o.*"
+    {
+      "pattern": ".* --output(=\\S*)?( .*)?",
+      "reason": "--output writes the result to a file"
+    },
+    {
+      "pattern": "ls( .*)? -\\w*L.*",
+      "reason": "-L follows symlinks while recursing, also to outside the session folder"
+    },
+    {
+      "pattern": "ls( .*)? --dereference( .*)?",
+      "reason": "--dereference follows symlinks while recursing, also to outside the session folder"
+    },
+    {
+      "pattern": "tail( .*)? -\\w*[fF].*",
+      "reason": "-f/-F keeps waiting for new lines and never finishes"
+    },
+    {
+      "pattern": "tail( .*)? --follow(=\\S*)?( .*)?",
+      "reason": "--follow keeps waiting for new lines and never finishes"
+    }
   ],
   "bashValidators": {
     "grep": "grep"
