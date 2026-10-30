@@ -10,7 +10,7 @@
   },
   "scripts": {
     "typecheck": "tsc",
-    "test": "node --test *.test.ts"
+    "test": "node --test *.test.ts validators/*.test.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

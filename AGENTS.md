@@ -13,6 +13,7 @@ It enforces confirmation in Pi itself, so it doesn't depend on the model followi
 | `pi-gui-confirm.json` | The user's allow lists (read on every tool call) |
 | `bash-summary.ts` | Optional: replaces the bash tool with one that takes a `summary` for the dialog title |
 | `pi-gui-confirm.test.ts` | Tests for the parser and the bash check (`node:test`) |
+| `validators/` | Per-command validators (`grep.ts`), their contract (`types.ts`) and their tests |
 | `README.md` | User documentation: config fields and the rules for shell commands |
 | `TODO.md` | Open work and ideas |
 
@@ -52,9 +53,16 @@ These hold until the maintainer decides otherwise (then update this file, see be
   and dropped as too complex.
 - **Every argument is checked as a possible path** (`argumentIsInside`). Which arguments a program
   reads as paths isn't known, so all of them must stay inside the session folder (`ctx.cwd`).
-  Flags pass; `--name=value` checks the value; quotes don't exempt a word. Accepted cost: arguments
-  that only look like outside paths ask (`grep -r "/api/" .`). Per-command validators are planned to
-  fix that (TODO.md).
+  Flags pass, but every possible attached value (every rest of the word) is checked as a path;
+  `--name=value` and `name=value` check the value; quotes don't exempt a word. Accepted cost: arguments
+  that only look like outside paths ask (`grep -r "/api/" .`), unless the command has a validator.
+- **Validators** (`validators/<name>.ts`, enabled per command in `bashValidators`) decide about one
+  command instead of `allowedBashCommands` and the generic check, and may allow or reject for any
+  reason, with a reason. The core still applies first: the parser, the folder tracking, unquoted
+  globs, and `excludedBashCommands` (always an override). A validator gets only the arguments, so
+  one validator can serve several command names. Validators are loaded by dynamic `import()`, so a
+  new one needs only a file and a config entry. They must be conservative: where they can't tell
+  what a word is, they check it like any other argument.
 - **Folder tracking.** `cd` moves the tracked folder only when it runs for certain and goes to an
   existing folder; otherwise the folder becomes unknown and later commands ask. The folder each
   command runs in must be inside the session folder too.
@@ -70,16 +78,16 @@ Run both after every change:
 
 ```sh
 npm run typecheck   # tsc
-npm test            # node --test *.test.ts
+npm test            # node --test *.test.ts validators/*.test.ts
 ```
 
 - `npm test` needs Node 22.18 or later (`engines` in `package.json`; it runs TypeScript directly).
   If `node` or `npm` isn't found, or the version is older, tell the maintainer instead of guessing a
   path to a Node installation.
 - `tsc` must report no errors.
-- Every change in behavior gets test cases in `pi-gui-confirm.test.ts`, with a short comment on
-  cases whose outcome isn't obvious. Tests use their own config and fixture folders, never
-  `pi-gui-confirm.json`.
+- Every change in behavior gets test cases in `pi-gui-confirm.test.ts`, or in
+  `validators/<name>.test.ts` for a validator, with a short comment on cases whose outcome isn't
+  obvious. Tests use their own config and fixture folders, never `pi-gui-confirm.json`.
 - Update `README.md` when the config or the rules users rely on change.
 
 ## TODO.md

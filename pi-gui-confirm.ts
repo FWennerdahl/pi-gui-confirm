@@ -9,21 +9,26 @@
  *   allowedBashCommands         regular expressions for shell commands that don't ask, as long as
  *                               every argument that could be a path stays inside the session folder
  *   excludedBashCommands        regular expressions for shell commands that ask even if allowed above
+ *   bashValidators              command name → validator in validators/<name>.ts, which decides about that
+ *                               command instead of allowedBashCommands (excludedBashCommands still apply)
  * Each shell command in a pipe or list is checked separately, with quotes and escapes removed and words
  * joined by single spaces. A pattern must match the whole command. See README.md for the path rules.
  * The file is read on every tool call. If it is missing or invalid, every tool call asks.
  */
 import { type ExtensionAPI, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { accessSync, constants, readFileSync, realpathSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import type { BashValidator, ValidatorHelpers } from "./validators/types.ts";
 
 export interface AllowList {
   alwaysAllow: string[];
   allowInsideWorkingDirectory: string[];
   allowedBashCommands: RegExp[];
   excludedBashCommands: RegExp[];
+  /** Command name → its validator. */
+  bashValidators: Map<string, BashValidator>;
 }
 
 const NOTHING_ALLOWED: AllowList = {
@@ -31,6 +36,7 @@ const NOTHING_ALLOWED: AllowList = {
   allowInsideWorkingDirectory: [],
   allowedBashCommands: [],
   excludedBashCommands: [],
+  bashValidators: new Map(),
 };
 
 // File-changing tools always ask, even if the config lists them, so the config can't silently drop that rule.
@@ -58,17 +64,44 @@ function regexList(value: unknown, field: string): RegExp[] {
   });
 }
 
-/** Checks a parsed config and compiles its patterns. Throws if it is invalid. */
-export function parseAllowList(config: any): AllowList {
+/**
+ * Loads the validators named in `bashValidators` ({ "grep": "grep" }: the command grep uses
+ * validators/grep.ts). Throws if a name is invalid or its file doesn't exist.
+ */
+async function loadValidators(value: unknown): Promise<Map<string, BashValidator>> {
+  if (value === undefined) return new Map();
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(`"bashValidators" must map command names to validator names`);
+  }
+  const validators = new Map<string, BashValidator>();
+  for (const [command, name] of Object.entries(value)) {
+    // Only plain names, so a name can't point outside the validators folder ("../x").
+    if (typeof name !== "string" || !/^[\w-]+$/.test(name)) {
+      throw new Error(`"bashValidators" has an invalid validator name for ${command}: ${JSON.stringify(name)}`);
+    }
+    const file = join(dirname(fileURLToPath(import.meta.url)), "validators", `${name}.ts`);
+    if (!existsSync(file)) throw new Error(`"bashValidators": there is no validator ${file}`);
+    const module = await import(pathToFileURL(file).href);
+    if (typeof module.default !== "function") {
+      throw new Error(`"bashValidators": ${file} doesn't export a validator function as default`);
+    }
+    validators.set(command, module.default);
+  }
+  return validators;
+}
+
+/** Checks a parsed config, compiles its patterns and loads its validators. Throws if it is invalid. */
+export async function parseAllowList(config: any): Promise<AllowList> {
   return {
     alwaysAllow: stringList(config.alwaysAllow, "alwaysAllow"),
     allowInsideWorkingDirectory: stringList(config.allowInsideWorkingDirectory, "allowInsideWorkingDirectory"),
     allowedBashCommands: regexList(config.allowedBashCommands, "allowedBashCommands"),
     excludedBashCommands: regexList(config.excludedBashCommands, "excludedBashCommands"),
+    bashValidators: await loadValidators(config.bashValidators),
   };
 }
 
-function loadAllowList(): AllowList {
+function loadAllowList(): Promise<AllowList> {
   return parseAllowList(JSON.parse(readFileSync(configPath(), "utf8")));
 }
 
@@ -220,11 +253,34 @@ function wordPath(word: Word, base: string): string | undefined {
   return resolve(base, text);
 }
 
-/** Whether a command is allowed, with its arguments resolved from `base` (the physical folder it runs in). */
+/**
+ * Whether a command is allowed, with its arguments resolved from `base` (the physical folder it runs in).
+ * Excluded patterns always win. A command with a validator is decided by it; any other command needs
+ * an allowed pattern, and every argument must pass the generic check.
+ */
 function commandIsAllowed(command: ShellCommand, allowList: AllowList, root: string, base: string): boolean {
-  if (!allowList.allowedBashCommands.some((pattern) => pattern.test(command.text))) return false;
   if (allowList.excludedBashCommands.some((pattern) => pattern.test(command.text))) return false;
-  return command.words.slice(1).every((word) => argumentIsInside(word, root, base));
+  const helpers: ValidatorHelpers = {
+    argumentIsInside: (word) => argumentIsInside(word, root, base),
+    isInside: (word) => wordIsInside(word, root, base),
+  };
+  const [name, ...args] = command.words;
+  // The shell expands unquoted globs to file names before the program runs, whatever it does with
+  // its arguments: grep /etc/p* . turns the "search pattern" into /etc/passwd and more.
+  if (!args.filter((word) => word.unquotedGlob).every(helpers.isInside)) return false;
+
+  const validator = allowList.bashValidators.get(unhide(name.text));
+  if (validator) {
+    // Validators see the words as the program gets them, with real spaces instead of placeholders.
+    const visible = args.map((word) => ({ ...word, text: unhide(word.text) }));
+    try {
+      return validator(visible, helpers).allowed;
+    } catch {
+      return false; // a broken validator must not allow anything
+    }
+  }
+  if (!allowList.allowedBashCommands.some((pattern) => pattern.test(command.text))) return false;
+  return args.every(helpers.argumentIsInside);
 }
 
 /**
@@ -240,9 +296,25 @@ function argumentIsInside(word: Word, root: string, base: string): boolean {
       // --name=value: the value may be a path. Treated as a word of its own, so a leading ~ counts.
       return argumentIsInside({ ...word, text: word.text.slice(equals + 1), plainStart: true }, root, base);
     }
-    // A flag, unless a value is attached to it (-f/etc/passwd): where that starts can't be known.
-    return !/[/~]|\.\./.test(text);
+    // A flag, possibly with a value attached (-f/etc/passwd, or -flink with a symlink named link).
+    // Which part is the value can't be known, so every possible value (every rest of the word) is
+    // checked as a path. The shell doesn't expand ~ or = in the middle of a word, hence plainStart.
+    for (let i = 1; i < text.length; i++) {
+      if (!wordIsInside({ ...word, text: word.text.slice(i), plainStart: false }, root, base)) return false;
+    }
+    return true;
   }
+  // name=value (dd if=/etc/passwd): the value may be a path too, and bash expands ~ right after the =
+  // in such words (a=~ becomes a=/Users/…), so it is checked like a word of its own.
+  const equals = text.indexOf("=");
+  if (equals > 0 && !argumentIsInside({ ...word, text: word.text.slice(equals + 1), plainStart: true }, root, base)) {
+    return false;
+  }
+  return wordIsInside(word, root, base);
+}
+
+/** Whether the word, read as a path from `base`, is inside the session folder `root`. */
+function wordIsInside(word: Word, root: string, base: string): boolean {
   const path = wordPath(word, base);
   return path !== undefined && isInside(root, path);
 }
@@ -367,7 +439,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("tool_call", async (event, ctx) => {
     let allowList = NOTHING_ALLOWED;
     try {
-      allowList = loadAllowList();
+      allowList = await loadAllowList();
       lastConfigError = undefined;
     } catch (error) {
       const message = `pi-gui-confirm.json could not be loaded, so every tool call asks: ${

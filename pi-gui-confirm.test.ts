@@ -33,7 +33,7 @@ before(() => {
 
 after(() => rmSync(fixture, { recursive: true, force: true }));
 
-const defaultAllowList = parseAllowList({
+const defaultAllowList = await parseAllowList({
   allowedBashCommands: ["cd( .*)?", "ls( .*)?", "head( .*)?", "grep( .*)?", "echo( .*)?"],
 });
 
@@ -180,8 +180,24 @@ describe("flags", () => {
     ["grep --exclude-dir=.. x .", false],
     ["grep -f/etc/passwd x", false], // a value attached to a short flag
     ["grep -f../x y", false],
+    ["grep -flink x", false], // link is a symlink pointing outside
+    ["grep -rnflink x", false],
+    ["grep -fpatterns.txt x", true], // an attached value without / inside the folder
+    // Every rest is checked, and /package.scala is one of them: an attached value with / always asks.
+    ["grep -fstubs/package.scala x", false],
+    ["grep '-f~' y", true], // the shell doesn't expand ~ mid-word: a folder named ~ inside
     ["grep -A3 x stubs", true],
     ["ls -- stubs", true],
+  ]);
+});
+
+describe("name=value words", () => {
+  cases([
+    ["echo if=/etc/passwd", false], // dd if=/etc/passwd reads it
+    ["echo a=~", false], // bash expands ~ after = in such words: a=/Users/…
+    ["echo a=b=../x", false],
+    ["echo a=stubs", true],
+    ["echo key=value", true],
   ]);
 });
 
@@ -275,8 +291,8 @@ describe("CDPATH", () => {
 });
 
 describe("pattern rules", () => {
-  test("excluded patterns win over allowed ones", () => {
-    const allowList = parseAllowList({
+  test("excluded patterns win over allowed ones", async () => {
+    const allowList = await parseAllowList({
       allowedBashCommands: ["ls( .*)?"],
       excludedBashCommands: ["ls .*-[a-zA-Z]*L.*"],
     });
@@ -284,19 +300,65 @@ describe("pattern rules", () => {
     assert.equal(isAllowed("ls -RL stubs", allowList), false);
   });
 
-  test("paths are checked whatever the pattern says", () => {
-    const allowList = parseAllowList({ allowedBashCommands: ["cat /etc/hosts"] });
+  test("paths are checked whatever the pattern says", async () => {
+    const allowList = await parseAllowList({ allowedBashCommands: ["cat /etc/hosts"] });
     assert.equal(isAllowed("cat /etc/hosts", allowList), false);
   });
 
-  test("patterns must match the whole command", () => {
-    const allowList = parseAllowList({ allowedBashCommands: ["ls"] });
+  test("patterns must match the whole command", async () => {
+    const allowList = await parseAllowList({ allowedBashCommands: ["ls"] });
     assert.equal(isAllowed("ls", allowList), true);
     assert.equal(isAllowed("ls stubs", allowList), false);
   });
 
-  test("invalid patterns make the config invalid", () => {
-    assert.throws(() => parseAllowList({ allowedBashCommands: ["ls("] }), /invalid regular expression/);
+  test("invalid patterns make the config invalid", async () => {
+    await assert.rejects(parseAllowList({ allowedBashCommands: ["ls("] }), /invalid regular expression/);
+  });
+});
+
+describe("validators", () => {
+  test("a validator decides about its command instead of the allowed patterns", async () => {
+    const allowList = await parseAllowList({ bashValidators: { grep: "grep" } });
+    assert.equal(isAllowed('grep -rn "/api/" .', allowList), true); // asks with the generic check
+    assert.equal(isAllowed("grep -rn x /etc", allowList), false);
+    assert.equal(isAllowed("grep -R x .", allowList), false);
+    assert.equal(isAllowed("grep -rnflink x .", allowList), false); // -f's attached value is a symlink outside
+    assert.equal(isAllowed("ls", allowList), false); // other commands still need a pattern
+  });
+
+  test("the same validator can serve several command names", async () => {
+    const allowList = await parseAllowList({ bashValidators: { grep: "grep", ggrep: "grep" } });
+    assert.equal(isAllowed('ggrep -rn "/api/" .', allowList), true);
+  });
+
+  test("excluded patterns win over validators", async () => {
+    const allowList = await parseAllowList({
+      bashValidators: { grep: "grep" },
+      excludedBashCommands: ["grep .*-[a-zA-Z]*i.*"],
+    });
+    assert.equal(isAllowed("grep -rn x .", allowList), true);
+    assert.equal(isAllowed("grep -rni x .", allowList), false);
+  });
+
+  test("unquoted globs are checked before the validator runs", async () => {
+    const allowList = await parseAllowList({ bashValidators: { grep: "grep" } });
+    // The shell expands /etc/p* to file names, so the search pattern isn't text any more.
+    assert.equal(isAllowed("grep /etc/p* .", allowList), false);
+    assert.equal(isAllowed("grep '/etc/p*' .", allowList), true);
+  });
+
+  test("the folder the command runs in is still checked", async () => {
+    const allowList = await parseAllowList({ bashValidators: { grep: "grep" }, allowedBashCommands: ["cd( .*)?"] });
+    assert.equal(isAllowed("cd stubs; grep -rn x ..", allowList), true);
+    assert.equal(isAllowed("cd; grep -rn x .", allowList), false); // in the home folder
+  });
+
+  test("a missing or invalid validator makes the config invalid", async () => {
+    await assert.rejects(parseAllowList({ bashValidators: { grep: "nope" } }), /there is no validator/);
+    await assert.rejects(parseAllowList({ bashValidators: { grep: "../grep" } }), /invalid validator name/);
+    await assert.rejects(parseAllowList({ bashValidators: { grep: 1 } }), /invalid validator name/);
+    await assert.rejects(parseAllowList({ bashValidators: ["grep"] }), /must map command names/);
+    await assert.rejects(parseAllowList({ bashValidators: { grep: "types" } }), /doesn't export a validator/);
   });
 });
 

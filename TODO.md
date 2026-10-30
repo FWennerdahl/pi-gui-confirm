@@ -17,35 +17,20 @@ and in the block reason when there is no UI (print/JSON mode). Causes to cover:
 This also lets the tests assert the cause, not just allowed/asks, so a case can't pass for the
 wrong reason.
 
-## Validators per command
-
-Refactor how bash commands are allowed. For each command, use an enabled validator for that command
-if there is one; otherwise fall back to `allowedBashCommands`/`excludedBashCommands` plus the generic
-argument check (`argumentIsInside`: every argument is treated as a possible path).
-
-- Validators live in their own files (e.g. `validators/grep.ts`) and are enabled by the user in the
-  config.
-- A validator knows its command's options, so it can tell paths from other arguments: grep's search
-  pattern isn't a path (`grep -rn "/api/" .` asks today), `-f`'s value is, `-R` follows symlinks.
-- To decide: the validator interface (input: the parsed `ShellCommand` and the folder it runs in;
-  output: allowed or a cause, see above); how validators are loaded (bundled and enabled by name, or
-  any file path); whether `excludedBashCommands` still applies to commands with a validator.
-- `cd` tracking, globs, `~`/`=`, `CDPATH` and `BASH_ENV` stay in the core check, for every command.
-
 ## Set up the rules in pi-gui-confirm.json
 
 The real config hasn't been updated for the path check yet: its bare `grep`, `head`, `cd` and `echo`
 entries only match those commands without arguments. Go through the commands to allow, one by one.
 Starting points from earlier discussion:
 
-- `ls( .*)?`, `grep( .*)?`, `head( .*)?`, `cd( .*)?`, `echo( .*)?`: every argument is checked as a
-  path anyway, so `.*` is safe.
-- Exclude flags that follow symlinks while recursing: `grep -R`/`-S`/`-O`, `ls -L`/`--dereference`.
+- `"bashValidators": { "grep": "grep" }`: grep's search pattern isn't checked as a path, and the
+  validator already asks on the flags that follow symlinks (`-R`, `-S`, `--dereference-recursive`).
+- `ls( .*)?`, `head( .*)?`, `cd( .*)?`, `echo( .*)?`: every argument is checked as a path anyway, so
+  `.*` is safe.
+- Exclude `ls -L`/`--dereference`, which follow symlinks while recursing with `-R`.
 - `git (status|log|diff|show)( .*)?` already exists; it should also exclude `--output` (writes a
   file), `--no-index` (diffs any two files) and `--ext-diff` (runs a program).
 - Only commands that read; see "Only allow commands that read" in AGENTS.md.
-
-May change once validators exist (above).
 
 ## Override the config from the user's pi folder
 
