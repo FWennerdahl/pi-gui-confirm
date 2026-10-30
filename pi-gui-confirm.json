@@ -9,7 +9,7 @@
     "mcp__linear__get_issue"
   ],
   "allowInsideWorkingDirectory": ["read", "grep", "find", "ls", "edit", "write"],
-  "protectedPaths": [".git", ".pi", ".envrc", "package.json"],
+  "protectedPaths": [".git", ".pi", ".envrc", "package.json", "node_modules", ".npmrc"],
   "allowedBashCommands": [
     "ls( .*)?",
     "git (status|log|diff|show|blame|ls-files|rev-parse)( .*)?",
@@ -17,7 +17,8 @@
     "tail( .*)?",
     "cat( .*)?",
     "wc( .*)?",
-    "cd( .*)?"
+    "cd( .*)?",
+    "npm run( -s)? typecheck"
   ],
   "excludedBashCommands": [
     {
