@@ -43,12 +43,6 @@ To decide:
   that names the file.
 - Read both on every tool call, as today, so changes apply immediately.
 
-## Clean up tests that are no longer relevant
-
-`pi-gui-confirm.test.ts` grew through several designs (the `{path}` token, the marker, then checking
-every argument). Go through it and remove cases that only made sense for a dropped design or
-duplicate another case, and regroup what is left if the `describe` blocks no longer fit.
-
 ## Get a second review of the bash check
 
 The shell parser and the bash check (`parseBashCommands`, `bashIsAllowed` and the helpers in

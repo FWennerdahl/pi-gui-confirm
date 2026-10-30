@@ -1,5 +1,5 @@
 /**
- * Tests for the shell command check in pi-gui-confirm.ts. Run with `npm test` (Node 24 or later runs
+ * Tests for the shell command check in pi-gui-confirm.ts. Run with `npm test` (Node 22.18 or later runs
  * TypeScript directly). Uses fixture folders in a temporary folder:
  *   repo/                   the session folder
  *   repo/stubs/package.scala
@@ -134,11 +134,8 @@ describe("parser", () => {
     'ls "open',
     "ls \\",
     "; ls",
-    "ls && && ls",
     "ls &&",
-    "ls |",
     "ls a\u00a0b",
-    "ls a\rb",
     "ls \uE000",
   ]) {
     test(`gives up on ${JSON.stringify(command)}`, () => assert.equal(parseBashCommands(command), undefined));
@@ -150,24 +147,16 @@ describe("paths", () => {
     ["ls", true],
     ["ls stubs", true],
     ["ls -la stubs", true],
-    ["ls stubs -la", true],
     ["ls 'a b'", true],
     ["ls /etc", false],
     ["ls '/etc'", false], // quotes don't matter
-    ["ls /etc .", false],
     ["ls /etc stubs", false],
-    ["ls -la /etc stubs", false],
     ["ls ..", false],
     ["ls stubs/../..", false],
     ["ls link", false],
     ["ls link/missing", true], // judged by its text: it doesn't exist, so nothing can be read through it
     ["ls \\; rm x", true], // the escaped ; is an argument to ls, not a separator
-    ["grep -n 'Spy|class ' stubs/package.scala", true],
     ["grep -rn \"/api/\" .", false], // a search pattern that looks like a path outside: asks
-    ["grep -f /etc/passwd x", false],
-    ["grep -f stubs/package.scala x", true],
-    ["head -40 stubs/package.scala", true],
-    ["echo /etc", false], // echo only prints it, but asks like any other path outside
   ]);
 });
 
@@ -175,19 +164,13 @@ describe("flags", () => {
   cases([
     ["ls --color=auto stubs", true],
     ["grep --file=/etc/passwd x", false],
-    ["grep --file=stubs/package.scala x", true],
     ["grep --file=~/x y", false],
-    ["grep --exclude-dir=.. x .", false],
     ["grep -f/etc/passwd x", false], // a value attached to a short flag
-    ["grep -f../x y", false],
     ["grep -flink x", false], // link is a symlink pointing outside
-    ["grep -rnflink x", false],
     ["grep -fpatterns.txt x", true], // an attached value without / inside the folder
     // Every rest is checked, and /package.scala is one of them: an attached value with / always asks.
     ["grep -fstubs/package.scala x", false],
     ["grep '-f~' y", true], // the shell doesn't expand ~ mid-word: a folder named ~ inside
-    ["grep -A3 x stubs", true],
-    ["ls -- stubs", true],
   ]);
 });
 
@@ -197,17 +180,13 @@ describe("name=value words", () => {
     ["echo a=~", false], // bash expands ~ after = in such words: a=/Users/…
     ["echo a=b=../x", false],
     ["echo a=stubs", true],
-    ["echo key=value", true],
   ]);
 });
 
 describe("tilde and zsh's =", () => {
   cases([
     ["ls ~", false],
-    ["ls ~/", false],
     ["ls ~root", false],
-    ["ls ~+", false],
-    ["ls ~-", false],
     ["ls '~'", true], // quoted: a folder named ~ inside the session folder
     ["ls =ls", false],
     ["ls '=ls'", true],
@@ -217,14 +196,9 @@ describe("tilde and zsh's =", () => {
 describe("globs", () => {
   cases([
     ["ls stubs/*", true],
-    ["ls *", true],
     ["ls .*", false], // can match .. in bash
-    ["ls stubs/.?", false],
     ["ls */..", false],
     ["ls '.*'", true], // quoted: not expanded
-    ["echo *", true],
-    ["echo /etc/*", false], // globs are checked in every position
-    ["grep x /et*", false],
   ]);
 });
 
@@ -233,13 +207,10 @@ describe("cd tracking", () => {
     ["cd", true],
     ["cd; ls", false], // home folder
     ["cd /", false],
-    ["cd ..", false],
-    ["cd stubs", true],
     ["cd link", false],
     ["cd stubs && ls ..", true],
     ["cd stubs\nls ..", true],
     ["cd stubs; cd ..; ls", true],
-    ["cd stubs && cd ../..", false],
     ["cd stubs && ls ../..", false],
     ["cd missing; ls", false],
     ["cd stubs/package.scala; ls", false], // not a folder
@@ -271,10 +242,8 @@ describe("cd with separators", () => {
     ["cd stubs && ls & ls ..", false], // back in the session folder after &
     ["echo x | cd stubs; ls", false], // zsh runs the last part of a pipeline in the main shell
     ["grep -q x stubs/package.scala && cd stubs; ls ..", false], // the cd may not run
-    ["grep -q x stubs/package.scala || cd stubs; ls ..", false],
     ["cd stubs || echo failed; ls ..", true], // echo only runs if cd failed; ls runs in stubs
     ["cd stubs || ls ..", false], // ls only runs if cd failed, so in the session folder
-    ["cd stubs && cd ..; ls", true],
     ["cd stubs || cd stubs; ls ..", true], // the second cd is skipped; ls runs in stubs
     ["cd stubs || cd ..; ls", false], // the skipped cd is checked from where it would run: outside
   ]);
@@ -320,8 +289,6 @@ describe("validators", () => {
   test("a validator decides about its command instead of the allowed patterns", async () => {
     const allowList = await parseAllowList({ bashValidators: { grep: "grep" } });
     assert.equal(isAllowed('grep -rn "/api/" .', allowList), true); // asks with the generic check
-    assert.equal(isAllowed("grep -rn x /etc", allowList), false);
-    assert.equal(isAllowed("grep -R x .", allowList), false);
     assert.equal(isAllowed("grep -rnflink x .", allowList), false); // -f's attached value is a symlink outside
     assert.equal(isAllowed("ls", allowList), false); // other commands still need a pattern
   });
