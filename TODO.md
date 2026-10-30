@@ -23,10 +23,8 @@ The real config hasn't been updated for the path check yet: its bare `grep`, `he
 entries only match those commands without arguments. Go through the commands to allow, one by one.
 Starting points from earlier discussion:
 
-- `"bashValidators": { "grep": "grep" }`: grep's search pattern isn't checked as a path, and the
-  validator already asks on the flags that follow symlinks (`-R`, `-S`, `--dereference-recursive`).
 - `ls( .*)?`, `head( .*)?`, `cd( .*)?`, `echo( .*)?`: every argument is checked as a path anyway, so
-  `.*` is safe.
+  `.*` is safe. The bare `"grep"` entry can go: grep is decided by its validator (`bashValidators`).
 - Exclude `ls -L`/`--dereference`, which follow symlinks while recursing with `-R`.
 - `git (status|log|diff|show)( .*)?` already exists; it should also exclude `--output` (writes a
   file), `--no-index` (diffs any two files) and `--ext-diff` (runs a program).
@@ -76,3 +74,39 @@ inside the session folder. Things to handle:
   `core.fsmonitor` runs on `git status`), `.pi/` (extensions), `.envrc`, `package.json` scripts.
 - A config field for the safe paths (globs relative to the session folder?), and how it interacts
   with the "show the change and wait for a yes" rule in `~/.pi/agent/AGENTS.md`.
+
+## Suggestions for pi-gui
+
+Changes for the pi-gui project itself, to propose or open a PR for, not for this repo. Before
+proposing, find the pi-gui repository and look at how the relevant part works today.
+
+### Setting to show extension notifications
+
+Extensions report problems with `ctx.ui.notify(message, "info" | "warning" | "error")`. pi defines
+it as fire-and-forget for front ends: "the client can display the information or ignore it"
+(`docs/rpc-extension-ui.md` in `@earendil-works/pi-coding-agent`). In pi-gui these messages don't
+seem to appear, so pi-gui-confirm's config errors (`pi-gui-confirm.json could not be loaded, so
+every tool call asks: …`) go unseen.
+
+Proposal: a setting that decides whether extension notifications are shown, e.g. as a toast or in
+the thread, possibly per level (show warnings and errors, hide info).
+
+First confirm that pi-gui really drops them: break `pi-gui-confirm.json` on purpose (e.g. add `"("`
+to `allowedBashCommands`), run a command, and see whether a warning appears. Restore the file after.
+
+### Richer formatting in confirmation dialogs
+
+The dialog from `ctx.ui.confirm(title, message)` shows the message as plain text. Allow richer
+formatting: preformatted text (keeps line breaks and alignment, e.g. for commands and diffs), or
+Markdown or HTML, depending on how the dialog is built today. pi-gui-confirm could then show, e.g.,
+the command in a code block and the reason it asks as a separate line.
+
+### Wider confirmation dialogs, with scrolling
+
+The dialog is narrow, and long text (commands, diffs, JSON) overflows it. Let it grow to the width
+of the thread's chat area, and add vertical and horizontal scrolling inside it when the text is
+larger than that.
+
+### Adjustable chat width
+
+Add a way to make the chat area wider: by dragging its edge, or by setting a width explicitly.
