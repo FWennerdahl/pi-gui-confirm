@@ -32,6 +32,26 @@ validator (`validators/find.ts`, see "Validators" in README.md) could allow it s
 - Values that are patterns, not paths, don't need the path check: `-name`, `-iname`, `-path`,
   `-ipath`, `-regex`, `-iregex` (e.g. `-path '/tmp/*'` matches text, it doesn't read `/tmp`).
 
+## Allow npm test without a security gap
+
+`npm run typecheck` is allowed, but `npm test` still asks. Tests run code, and the agent may write
+test files without a dialog (`edit`/`write` inside the session folder), so allowing `npm test` would
+open a gap: write `x.test.ts` that deletes or reads anything, then run `npm test`, with no dialog at
+all. The `npm test` dialog is the last checkpoint between "the agent wrote code" and "it runs".
+
+Ideas to explore:
+
+- **Only when nothing changed unchecked:** remember the files edited or written without a dialog in
+  this session, and allow `npm test` only if there are none since the last time a test run was
+  confirmed. Then each new piece of agent-written code gets one dialog before it runs.
+- **A sandbox:** run tests in a macOS sandbox (`sandbox-exec` with a profile) that blocks writing
+  outside the session folder, network access and reading private files like `~/.ssh`. Then running
+  agent-written code can do little harm. `sandbox-exec` is deprecated but still works; check what it
+  can and can't block, and how the extension would wrap the command.
+- **Protect test files:** make writing test files always ask. `protectedPaths` only takes exact names
+  today, so this would need patterns (`*.test.ts`). Simple, but asks often, and other files the tests
+  import can still be edited without a dialog.
+
 ## Override the config from the user's pi folder
 
 Today the config is only read from `pi-gui-confirm.json` next to the extension. Make it possible to
@@ -45,15 +65,19 @@ To decide:
   that names the file.
 - Read both on every tool call, as today, so changes apply immediately.
 
-## Get a second review of the bash check
+## Get a second review of the code base
 
-The shell parser and the bash check (`parseBashCommands`, `bashIsAllowed` and the helpers in
-`pi-gui-confirm.ts`) are security logic with many edge cases, and the code and its tests were written
-in the same session. Have them reviewed by a fresh session or another model, given only `README.md`
-and `AGENTS.md` as context, looking for:
+The whole extension is security logic with many edge cases (`pi-gui-confirm.ts`, `bash-summary.ts`,
+`validators/`, the tests), and the code and its tests were written in the same session. Have it
+reviewed by a fresh session or another model, given only `README.md` and `AGENTS.md` as context,
+looking for:
 
-- commands that are allowed but read outside the session folder, or run something unexpected
-  (quoting, escapes, globs, separators, `cd` tracking, zsh differences);
+- tool calls that are allowed but shouldn't be:
+  - bash commands that read outside the session folder or run something unexpected (quoting,
+    escapes, globs, separators, `cd` tracking, zsh differences), and gaps in the validators;
+  - tool paths that end up somewhere other than checked (`resolveToolPath` copying pi's rules,
+    symlinks, paths that don't exist yet), and edits that reach protected paths or the config file;
+  - config handling: invalid configs that are accepted, or loading errors that allow anything;
 - test cases that pass for the wrong reason (easier once the check reports a cause, see above);
 - places where the code is hard to follow.
 

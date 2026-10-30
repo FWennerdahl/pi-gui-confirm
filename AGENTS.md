@@ -75,8 +75,11 @@ These hold until the maintainer decides otherwise (then update this file, see be
 - **Shells.** bash and zsh are supported with the same rules. Any other `shellPath`, or `BASH_ENV`
   being set, makes every bash command ask. `shellCommandPrefix` and `~/.zshenv` are trusted as the
   user's own configuration.
-- **Only allow commands that read.** The path check limits where commands look, not what they do;
-  commands that write, create files or run other programs must not be allowed.
+- **Commands that read are the default.** When proposing rules for the config, stick to commands that
+  read files, or run code that only reads (like a type check) and that allowed edits can't change
+  (its files are in `protectedPaths`). The path check limits where commands look, not what they do.
+  The user may allow more (writing, or running code that allowed edits can change, like tests):
+  point out what such a rule makes possible, then follow the user's decision.
 
 ## What must pass
 
