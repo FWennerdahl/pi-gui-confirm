@@ -344,6 +344,17 @@ describe("validators", () => {
     assert.equal(isAllowed("cd; grep -rn x .", allowList), false); // in the home folder
   });
 
+  test("any-arguments skips the path check, but not what the core checks", async () => {
+    const allowList = await parseAllowList({
+      bashValidators: { echo: "any-arguments" },
+      allowedBashCommands: ["cd( .*)?"],
+    });
+    assert.equal(isAllowed("echo /etc ../x if=/etc/passwd", allowList), true); // only printed
+    assert.equal(isAllowed("echo /etc/*", allowList), false); // the shell expands it to a listing of /etc
+    assert.equal(isAllowed("cd stubs; echo x", allowList), true);
+    assert.equal(isAllowed("cd; echo x", allowList), false); // runs in the home folder
+  });
+
   test("a missing or invalid validator makes the config invalid", async () => {
     await assert.rejects(parseAllowList({ bashValidators: { grep: "nope" } }), /there is no validator/);
     await assert.rejects(parseAllowList({ bashValidators: { grep: "../grep" } }), /invalid validator name/);

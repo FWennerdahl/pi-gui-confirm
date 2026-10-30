@@ -80,6 +80,9 @@ Included:
 
 - `grep`: the search pattern isn't checked; files to search and `-f`'s file are. `-R`, `-S` and
   `--dereference-recursive` ask, since they follow symlinks while recursing.
+- `any-arguments`: allows any arguments, without checking them at all. For commands you trust with
+  any arguments, where even the automatic path check of `allowedBashCommands` is unwanted, like `echo`
+  and `pwd` (`echo /etc` just prints `/etc`). Globs, the folder and exclusions are still checked.
 
 To add one, create `validators/<name>.ts` with a default export of type `BashValidator`
 (`validators/types.ts`): it gets the command's arguments and the core's path checks, and returns

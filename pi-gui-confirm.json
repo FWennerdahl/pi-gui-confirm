@@ -16,9 +16,7 @@
     "tail( .*)?",
     "cat( .*)?",
     "wc( .*)?",
-    "pwd( .*)?",
-    "cd( .*)?",
-    "echo( .*)?"
+    "cd( .*)?"
   ],
   "excludedBashCommands": [
     {
@@ -43,6 +41,8 @@
     }
   ],
   "bashValidators": {
-    "grep": "grep"
+    "grep": "grep",
+    "echo": "any-arguments",
+    "pwd": "any-arguments"
   }
 }

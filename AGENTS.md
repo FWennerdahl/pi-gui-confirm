@@ -13,7 +13,7 @@ It enforces confirmation in Pi itself, so it doesn't depend on the model followi
 | `pi-gui-confirm.json` | The user's allow lists (read on every tool call) |
 | `bash-summary.ts` | Optional: replaces the bash tool with one that takes a `summary` for the dialog title |
 | `pi-gui-confirm.test.ts` | Tests for the parser and the bash check (`node:test`) |
-| `validators/` | Per-command validators (`grep.ts`), their contract (`types.ts`) and their tests |
+| `validators/` | Per-command validators (`grep.ts`, `any-arguments.ts`), their contract (`types.ts`) and their tests |
 | `README.md` | User documentation: config fields and the rules for shell commands |
 | `TODO.md` | Open work and ideas |
 
