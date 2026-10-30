@@ -66,15 +66,6 @@ To decide:
 every argument). Go through it and remove cases that only made sense for a dropped design or
 duplicate another case, and regroup what is left if the `describe` blocks no longer fit.
 
-## Verify the npm version and path
-
-`npm test` needs Node 22.18 or later (it runs `.ts` files directly). Pi's shell doesn't load nvm, so
-`npm` isn't on its `PATH`; AGENTS.md currently hard-codes `~/.nvm/versions/node/v24.15.0/bin`. Check:
-
-- which Node and npm versions the maintainer's terminal uses, and whether they run the tests;
-- whether to declare the requirement (`engines` in `package.json`, an `.nvmrc`), and update the
-  instructions in AGENTS.md to match.
-
 ## Get a second review of the bash check
 
 The shell parser and the bash check (`parseBashCommands`, `bashIsAllowed` and the helpers in

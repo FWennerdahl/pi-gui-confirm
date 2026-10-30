@@ -73,8 +73,9 @@ npm run typecheck   # tsc
 npm test            # node --test *.test.ts
 ```
 
-- `npm test` needs Node 22.18 or later (it runs TypeScript directly). Pi's shell doesn't load nvm;
-  there, prefix with `PATH=~/.nvm/versions/node/v24.15.0/bin:$PATH`.
+- `npm test` needs Node 22.18 or later (`engines` in `package.json`; it runs TypeScript directly).
+  If `node` or `npm` isn't found, or the version is older, tell the maintainer instead of guessing a
+  path to a Node installation.
 - `tsc` must report no errors.
 - Every change in behavior gets test cases in `pi-gui-confirm.test.ts`, with a short comment on
   cases whose outcome isn't obvious. Tests use their own config and fixture folders, never

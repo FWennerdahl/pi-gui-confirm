@@ -5,6 +5,9 @@
   "description": "Pi extension that asks for confirmation before tool calls, with allowlists for read-only tools and shell commands",
   "type": "module",
   "license": "MIT",
+  "engines": {
+    "node": ">=22.18"
+  },
   "scripts": {
     "typecheck": "tsc",
     "test": "node --test *.test.ts"
