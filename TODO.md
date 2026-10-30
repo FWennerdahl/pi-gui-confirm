@@ -57,19 +57,21 @@ and `AGENTS.md` as context, looking for:
 - test cases that pass for the wrong reason (easier once the check reports a cause, see above);
 - places where the code is hard to follow.
 
-## Allow edits and writes in safe paths
+## Suggestions for pi
 
-`edit` and `write` always ask (`ALWAYS_ASK` in `pi-gui-confirm.ts`). pi's tools themselves can write
-anywhere: absolute paths and `../` work. Allow them without asking for paths the user marks as safe,
-inside the session folder. Things to handle:
+Changes for pi itself (`@earendil-works/pi-coding-agent`), to propose or open a PR for, not for this
+repo. Before proposing, find the pi repository and look at how the relevant part works today.
 
-- `write` creates files, so `realpathSync` fails and the check falls back to the path's text: through
-  a symlinked folder, `link/new.txt` would be created outside. Resolve the nearest existing parent
-  folder through `realpathSync` instead.
-- Files inside the repo that make code run later must stay excluded, e.g. `.git/` (hooks,
-  `core.fsmonitor` runs on `git status`), `.pi/` (extensions), `.envrc`, `package.json` scripts.
-- A config field for the safe paths (globs relative to the session folder?), and how it interacts
-  with the "show the change and wait for a yes" rule in `~/.pi/agent/AGENTS.md`.
+### Export the path resolution used by the built-in tools
+
+pi's tools resolve their `path` argument with `resolveToCwd` (`dist/core/tools/path-utils.js`), which
+uses `normalizePath` (`dist/utils/paths.js`): it strips a leading `@`, turns `file://` URLs into
+paths, expands `~` and normalizes Unicode spaces. Neither function is exported (not in
+`dist/index.d.ts`, and the package's `exports` field only allows the main entry), so an extension that
+checks paths before a tool runs, like pi-gui-confirm, has to copy these rules and keep them in sync.
+
+Proposal: export `resolveToCwd` (or `resolvePath`/`normalizePath`) from the package's main entry, so
+extensions can resolve a tool's path exactly as the tool will.
 
 ## Suggestions for pi-gui
 

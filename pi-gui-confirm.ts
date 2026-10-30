@@ -6,6 +6,8 @@
  *   alwaysAllow                 tool names that never ask
  *   allowInsideWorkingDirectory tool names that don't ask when their `path` is inside the session folder
  *     (tool names may use `*` as a wildcard, e.g. "mcp__grafana__get_*")
+ *   protectedPaths              file and folder names that edit and write always ask for (".git", ".envrc"),
+ *                               at any depth; this config file is always protected too
  *   allowedBashCommands         regular expressions for shell commands that don't ask, as long as
  *                               every argument that could be a path stays inside the session folder
  *   excludedBashCommands        shell commands that ask even if allowed above:
@@ -19,13 +21,15 @@
 import { type ExtensionAPI, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { accessSync, constants, existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { BashValidator, ValidatorHelpers } from "./validators/types.ts";
 
 export interface AllowList {
   alwaysAllow: string[];
   allowInsideWorkingDirectory: string[];
+  /** Names that edit and write always ask for, wherever they appear in the path. */
+  protectedPaths: string[];
   allowedBashCommands: RegExp[];
   excludedBashCommands: Exclusion[];
   /** Command name → its validator. */
@@ -35,13 +39,14 @@ export interface AllowList {
 const NOTHING_ALLOWED: AllowList = {
   alwaysAllow: [],
   allowInsideWorkingDirectory: [],
+  protectedPaths: [],
   allowedBashCommands: [],
   excludedBashCommands: [],
   bashValidators: new Map(),
 };
 
-// File-changing tools always ask, even if the config lists them, so the config can't silently drop that rule.
-const ALWAYS_ASK = new Set(["edit", "write"]);
+// Tools that change files: protectedPaths apply to them.
+const WRITING_TOOLS = new Set(["edit", "write"]);
 
 function configPath(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "pi-gui-confirm.json");
@@ -53,6 +58,17 @@ function stringList(value: unknown, field: string): string[] {
     throw new Error(`"${field}" must be an array of strings`);
   }
   return value;
+}
+
+/** Reads protectedPaths: plain names (".git", "package.json"), matched against every part of a path. */
+function nameList(value: unknown, field: string): string[] {
+  const names = stringList(value, field);
+  for (const name of names) {
+    if (name === "" || name.includes("/")) {
+      throw new Error(`"${field}" must contain names without /, e.g. ".git": ${JSON.stringify(name)}`);
+    }
+  }
+  return names;
 }
 
 function regexList(value: unknown, field: string): RegExp[] {
@@ -127,6 +143,7 @@ export async function parseAllowList(config: any): Promise<AllowList> {
   return {
     alwaysAllow: stringList(config.alwaysAllow, "alwaysAllow"),
     allowInsideWorkingDirectory: stringList(config.allowInsideWorkingDirectory, "allowInsideWorkingDirectory"),
+    protectedPaths: nameList(config.protectedPaths, "protectedPaths"),
     allowedBashCommands: regexList(config.allowedBashCommands, "allowedBashCommands"),
     excludedBashCommands: exclusionList(config.excludedBashCommands, "excludedBashCommands"),
     bashValidators: await loadValidators(config.bashValidators),
@@ -444,15 +461,60 @@ export function bashIsAllowed(commands: ShellCommand[], allowList: AllowList, ro
   return true;
 }
 
-function expandHome(path: string): string {
-  return path === "~" || path.startsWith("~/") ? homedir() + path.slice(1) : path;
+/**
+ * Resolves a tool's `path` argument the way pi's built-in tools do. This mimics pi's internal logic
+ * (resolveToCwd and normalizePath in @earendil-works/pi-coding-agent) until pi exports it so it can be
+ * reused (TODO.md, "Suggestions for pi"): normalize Unicode spaces, strip a leading @, expand ~, turn
+ * file:// URLs into paths. Returns undefined if the path can't be resolved (an invalid file:// URL).
+ */
+export function resolveToolPath(path: string, cwd: string): string | undefined {
+  let normalized = path.replace(/[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g, " ");
+  if (normalized.startsWith("@")) normalized = normalized.slice(1);
+  if (normalized === "~") return homedir();
+  if (normalized.startsWith("~/")) return join(homedir(), normalized.slice(2));
+  if (/^file:\/\//.test(normalized)) {
+    try {
+      normalized = fileURLToPath(normalized);
+    } catch {
+      return undefined;
+    }
+  }
+  return resolve(cwd, normalized);
 }
 
+/**
+ * Whether a tool may use `target` without asking: it must be inside the session folder `root`. Edit
+ * and write must also stay away from protected paths: a name from protectedPaths anywhere in the path
+ * (.git/hooks/x, packages/a/package.json), or one of `configFiles`, so they can't change what is allowed.
+ */
+export function toolPathIsAllowed(
+  toolName: string,
+  target: string,
+  root: string,
+  protectedPaths: string[],
+  configFiles: string[],
+): boolean {
+  if (!isInside(root, target)) return false;
+  if (!WRITING_TOOLS.has(toolName)) return true;
+  const real = realOrResolved(target);
+  if (configFiles.some((file) => realOrResolved(file) === real)) return false;
+  const parts = relative(realOrResolved(root), real).split(sep);
+  return !parts.some((part) => protectedPaths.includes(part));
+}
+
+/**
+ * The path with symlinks followed, so a link can't escape the session folder. For a path that doesn't
+ * exist (yet), its nearest existing folder is followed instead: a new file in a symlinked folder
+ * (link/new.txt) is where the link points.
+ */
 function realOrResolved(path: string): string {
-  try {
-    return realpathSync(path); // follow symlinks so a link can't escape the working directory
-  } catch {
-    return resolve(path);
+  const absolute = resolve(path);
+  for (let existing = absolute; ; existing = dirname(existing)) {
+    try {
+      return join(realpathSync(existing), relative(existing, absolute));
+    } catch {
+      if (dirname(existing) === existing) return absolute; // nothing exists, not even the root
+    }
   }
 }
 
@@ -483,19 +545,22 @@ export default function (pi: ExtensionAPI) {
 
     const input = event.input as Record<string, unknown>;
 
-    if (!ALWAYS_ASK.has(event.toolName)) {
-      if (matchesAny(allowList.alwaysAllow, event.toolName)) return undefined;
-      if (matchesAny(allowList.allowInsideWorkingDirectory, event.toolName)) {
-        // Pi's grep/find/ls default to the working directory when no path is given.
-        const path = typeof input.path === "string" ? input.path : ".";
-        const target = resolve(ctx.cwd, expandHome(path));
-        if (isInside(ctx.cwd, target)) return undefined;
-      }
-      if (event.toolName === "bash") {
-        const commands = parseBashCommands(String(input.command ?? ""));
-        if (commands && shellIsSupported(ctx.cwd) && bashIsAllowed(commands, allowList, ctx.cwd)) {
+    if (matchesAny(allowList.alwaysAllow, event.toolName)) return undefined;
+    if (matchesAny(allowList.allowInsideWorkingDirectory, event.toolName)) {
+      // Pi's grep/find/ls default to the working directory when no path is given.
+      const target = resolveToolPath(typeof input.path === "string" ? input.path : ".", ctx.cwd);
+      if (target !== undefined) {
+        // The tool then uses exactly the path that was checked, even if pi's own rules change.
+        if (typeof input.path === "string") input.path = target;
+        if (toolPathIsAllowed(event.toolName, target, ctx.cwd, allowList.protectedPaths, [configPath()])) {
           return undefined;
         }
+      }
+    }
+    if (event.toolName === "bash") {
+      const commands = parseBashCommands(String(input.command ?? ""));
+      if (commands && shellIsSupported(ctx.cwd) && bashIsAllowed(commands, allowList, ctx.cwd)) {
+        return undefined;
       }
     }
 

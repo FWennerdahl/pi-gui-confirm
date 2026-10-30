@@ -42,9 +42,14 @@ Code and docs are read by a person reviewing diffs, so optimize for that:
 These hold until the maintainer decides otherwise (then update this file, see below).
 
 - **Fail safe.** When the check can't tell, it asks. Never widen what is allowed to avoid a prompt;
-  an extra prompt is always the acceptable failure.
-- **`edit` and `write` always ask** (`ALWAYS_ASK`), whatever the config says. Planned change: see
-  TODO.md.
+  an extra prompt is always the acceptable failure. Whatever the config doesn't explicitly allow
+  asks; no tool is special-cased.
+- **Tool paths** (tools in `allowInsideWorkingDirectory`) are resolved like pi's own tools
+  (`resolveToolPath` mimics pi's internal `resolveToCwd` until pi exports it) and written back into
+  the tool call, so the tool uses exactly the checked path. Symlinks are followed, for paths that
+  don't exist yet through their nearest existing folder. `edit` and `write` also ask for
+  `protectedPaths` (names matched at any depth) and the config file, which make code run later or
+  decide what is allowed.
 - **Shell parsing.** `parseBashCommands` splits a line into commands and words, removing quotes and
   escapes like bash/zsh do. Anything it doesn't fully understand (`$`, backticks, redirections,
   subshells, groups, syntax errors, unusual whitespace) makes the whole line ask.

@@ -24,7 +24,8 @@ immediately.
 | Field | Meaning |
 |---|---|
 | `alwaysAllow` | Tool names that never ask. `*` is a wildcard, e.g. `"mcp__grafana__get_*"`. |
-| `allowInsideWorkingDirectory` | Tool names that don't ask when their `path` is inside the session folder (no path means the session folder). |
+| `allowInsideWorkingDirectory` | Tool names that don't ask when their `path` is inside the session folder (no path means the session folder). Add `edit` and `write` to allow changing files there; see below. |
+| `protectedPaths` | Names that `edit` and `write` always ask for, wherever they appear in the path, e.g. `[".git", ".pi", ".envrc", "package.json"]`. |
 | `allowedBashCommands` | Regular expressions for shell commands that don't ask. A pattern must match the whole command. |
 | `excludedBashCommands` | Shell commands that ask even if allowed above, as `{ "pattern": …, "reason": … }`: a regular expression, and why it asks. Omit the reason (or leave it empty) to report the pattern instead. |
 | `bashValidators` | Command names mapped to validators in `validators/`, e.g. `{ "grep": "grep" }`. See below. |
@@ -32,6 +33,19 @@ immediately.
 Shell command lines are split at `|`, `&`, `;`, `&&`, `||` and newlines, and every command must be
 allowed. Patterns are matched against each command with quotes and escapes removed and words joined
 by single spaces. Lines with `$`, backticks, `>`, `<`, `(`, `)`, `{` or `}` always ask.
+
+### Paths in tool calls
+
+For tools in `allowInsideWorkingDirectory`, the `path` is resolved the way pi's own tools resolve it
+(a leading `@` is dropped, `~` and `file://` URLs are expanded) and written back into the tool call,
+so the tool uses exactly the path that was checked. Symlinks are followed: `link/x` with `link`
+pointing outside asks, and so does a new file in such a folder (`write link/new.txt`).
+
+`edit` and `write` also ask for protected paths, even inside the session folder: names from
+`protectedPaths` anywhere in the path (`.git/hooks/pre-commit`, `packages/api/package.json`), and
+this extension's config file. They protect files that make code run later without asking: git runs
+hooks and `core.fsmonitor` from `.git`, pi loads extensions from `.pi`, direnv runs `.envrc`, npm runs
+`package.json` scripts, and the config file decides what is allowed.
 
 ### Paths in shell commands
 
@@ -42,7 +56,8 @@ Which arguments a program reads as paths isn't known, so every argument is check
 "allowedBashCommands": ["cd( .*)?", "ls( .*)?"]
 ```
 
-- `ls -la stubs` is allowed; `ls /etc`, `ls ..` and `ls link` (a symlink pointing outside) ask.
+- `ls -la stubs` is allowed; `ls /etc`, `ls ..` and `ls link` (a symlink pointing outside) ask. A
+  path that doesn't exist is checked through its nearest existing folder (`ls link/missing` asks).
 - Flags pass. For `--name=value` the value is checked. For a flag that may have a value attached
   (`-f/etc/passwd`, or `-flink` where `link` is a symlink pointing outside), every possible value,
   i.e. every rest of the word, is checked as a path. So an attached value containing `/` always
@@ -93,7 +108,6 @@ Trusted as your own configuration: `shellCommandPrefix` in Pi's settings and zsh
 run before every command and can change what a command name means (aliases, functions, `CDPATH`).
 
 Always:
-- `edit` and `write` ask, whatever the config says.
 - If the config is missing or invalid, every tool call asks and a warning is shown.
 - Without a UI (print or JSON mode), calls that would ask are blocked.
 

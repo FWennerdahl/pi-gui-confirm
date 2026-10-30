@@ -3,12 +3,16 @@
  * TypeScript directly). Uses fixture folders in a temporary folder:
  *   repo/                   the session folder
  *   repo/stubs/package.scala
+ *   repo/.git/hooks/
  *   repo/link -> outside/   a symlink out of the session folder
+ *   repo/docs-link -> stubs/       a symlink to another place inside
+ *   repo/hooks -> .git/hooks/      a symlink to a protected place inside
+ *   repo/settings.json -> stubs/package.scala   a symlink to the file the tests use as config file
  *   outside/
  */
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import {
@@ -16,7 +20,9 @@ import {
   bashIsAllowed,
   parseAllowList,
   parseBashCommands,
+  resolveToolPath,
   shellIsSupported,
+  toolPathIsAllowed,
 } from "./pi-gui-confirm.ts";
 
 let fixture: string;
@@ -26,9 +32,13 @@ before(() => {
   fixture = realpathSync(mkdtempSync(join(tmpdir(), "pi-gui-confirm-")));
   repo = join(fixture, "repo");
   mkdirSync(join(repo, "stubs"), { recursive: true });
+  mkdirSync(join(repo, ".git", "hooks"), { recursive: true });
   mkdirSync(join(fixture, "outside"));
   writeFileSync(join(repo, "stubs", "package.scala"), "class Spy\n");
   symlinkSync(join(fixture, "outside"), join(repo, "link"));
+  symlinkSync(join(repo, "stubs"), join(repo, "docs-link"));
+  symlinkSync(join(repo, ".git", "hooks"), join(repo, "hooks"));
+  symlinkSync(join(repo, "stubs", "package.scala"), join(repo, "settings.json"));
 });
 
 after(() => rmSync(fixture, { recursive: true, force: true }));
@@ -154,7 +164,8 @@ describe("paths", () => {
     ["ls ..", false],
     ["ls stubs/../..", false],
     ["ls link", false],
-    ["ls link/missing", true], // judged by its text: it doesn't exist, so nothing can be read through it
+    ["ls docs-link", true], // a symlink to another place inside
+    ["ls link/missing", false], // doesn't exist: checked through its nearest existing folder, link
     ["ls \\; rm x", true], // the escaped ; is an argument to ls, not a separator
     ["grep -rn \"/api/\" .", false], // a search pattern that looks like a path outside: asks
   ]);
@@ -367,5 +378,61 @@ describe("validators", () => {
 describe("shell", () => {
   test("BASH_ENV makes every command ask", () => {
     withEnv("BASH_ENV", "/tmp/bash-env", () => assert.equal(shellIsSupported(repo), false));
+  });
+});
+
+describe("tool paths are resolved like pi does", () => {
+  test("relative, ~, a leading @ and file:// URLs", () => {
+    assert.equal(resolveToolPath("stubs/x", repo), join(repo, "stubs/x"));
+    assert.equal(resolveToolPath("~/x", repo), join(homedir(), "x"));
+    assert.equal(resolveToolPath("@/etc/passwd", repo), "/etc/passwd"); // not <repo>/@/etc/passwd
+    assert.equal(resolveToolPath("@stubs/x", repo), join(repo, "stubs/x"));
+    assert.equal(resolveToolPath("file:///etc/passwd", repo), "/etc/passwd");
+    assert.equal(resolveToolPath("a\u00A0b", repo), join(repo, "a b")); // Unicode spaces become spaces
+    assert.equal(resolveToolPath("file://host/x", repo), undefined); // not a local file
+  });
+});
+
+describe("tool paths", () => {
+  const protectedPaths = [".git", ".pi", ".envrc", "package.json"];
+  const configFile = () => join(repo, "stubs", "package.scala"); // stands in for pi-gui-confirm.json
+  const allowed = (tool: string, path: string) =>
+    toolPathIsAllowed(tool, resolveToolPath(path, repo)!, repo, protectedPaths, [configFile()]);
+
+  test("reads must be inside the session folder", () => {
+    assert.equal(allowed("read", "stubs/package.scala"), true);
+    assert.equal(allowed("read", "/etc/passwd"), false);
+    assert.equal(allowed("read", "@/etc/passwd"), false); // pi strips the @
+    assert.equal(allowed("read", "file:///etc/passwd"), false);
+    assert.equal(allowed("read", "link/x"), false); // through a symlink pointing outside
+    assert.equal(allowed("read", ".git/config"), true); // protected paths only apply to edits and writes
+  });
+
+  test("edits and writes must be inside and not protected", () => {
+    assert.equal(allowed("write", "stubs/new.ts"), true);
+    assert.equal(allowed("edit", "stubs/package.scala"), false); // the config file is always protected
+    assert.equal(allowed("write", "link/new.txt"), false); // a new file in a symlinked folder is outside
+    assert.equal(allowed("write", "new-folder/x.ts"), true); // a new folder inside is fine
+    assert.equal(allowed("edit", ".git/config"), false);
+    assert.equal(allowed("write", "sub/.git/hooks/pre-commit"), false); // names match at any depth
+    assert.equal(allowed("edit", "packages/api/package.json"), false);
+    assert.equal(allowed("write", ".envrc"), false);
+    assert.equal(allowed("write", "my.git.txt"), true); // only whole names match
+  });
+
+  test("symlinks are judged by where they really point", () => {
+    // docs-link -> stubs: another place inside.
+    assert.equal(allowed("read", "docs-link/package.scala"), true);
+    assert.equal(allowed("write", "docs-link/new.ts"), true);
+    // hooks -> .git/hooks: the name looks harmless, the real path contains .git.
+    assert.equal(allowed("read", "hooks/pre-commit"), true);
+    assert.equal(allowed("write", "hooks/pre-commit"), false);
+    // settings.json -> the config file.
+    assert.equal(allowed("edit", "settings.json"), false);
+  });
+
+  test("protectedPaths must be names", async () => {
+    await assert.rejects(parseAllowList({ protectedPaths: [".git/"] }), /names without \//);
+    await assert.rejects(parseAllowList({ protectedPaths: [""] }), /names without \//);
   });
 });
