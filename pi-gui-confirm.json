@@ -8,7 +8,8 @@
     "mcp__slack__slack_read_file",
     "mcp__linear__get_issue"
   ],
-  "allowInsideWorkingDirectory": ["read", "grep", "find", "ls"],
+  "allowInsideWorkingDirectory": ["read", "grep", "find", "ls", "edit", "write"],
+  "protectedPaths": [".git", ".pi", ".envrc", "package.json"],
   "allowedBashCommands": [
     "ls( .*)?",
     "git (status|log|diff|show|blame|ls-files|rev-parse)( .*)?",
