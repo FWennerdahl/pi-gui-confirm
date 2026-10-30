@@ -8,7 +8,8 @@
  *     (tool names may use `*` as a wildcard, e.g. "mcp__grafana__get_*")
  *   allowedBashCommands         regular expressions for shell commands that don't ask, as long as
  *                               every argument that could be a path stays inside the session folder
- *   excludedBashCommands        regular expressions for shell commands that ask even if allowed above
+ *   excludedBashCommands        shell commands that ask even if allowed above:
+ *                               { "pattern": regular expression, "reason": why it asks (optional) }
  *   bashValidators              command name → validator in validators/<name>.ts, which decides about that
  *                               command instead of allowedBashCommands (excludedBashCommands still apply)
  * Each shell command in a pipe or list is checked separately, with quotes and escapes removed and words
@@ -26,7 +27,7 @@ export interface AllowList {
   alwaysAllow: string[];
   allowInsideWorkingDirectory: string[];
   allowedBashCommands: RegExp[];
-  excludedBashCommands: RegExp[];
+  excludedBashCommands: Exclusion[];
   /** Command name → its validator. */
   bashValidators: Map<string, BashValidator>;
 }
@@ -55,12 +56,43 @@ function stringList(value: unknown, field: string): string[] {
 }
 
 function regexList(value: unknown, field: string): RegExp[] {
-  return stringList(value, field).map((pattern) => {
-    try {
-      return new RegExp(`^(?:${pattern})$`);
-    } catch {
-      throw new Error(`"${field}" has an invalid regular expression: ${pattern}`);
+  return stringList(value, field).map((pattern) => compilePattern(pattern, field));
+}
+
+function compilePattern(pattern: string, field: string): RegExp {
+  try {
+    return new RegExp(`^(?:${pattern})$`);
+  } catch {
+    throw new Error(`"${field}" has an invalid regular expression: ${pattern}`);
+  }
+}
+
+/** An entry in excludedBashCommands. */
+export interface Exclusion {
+  pattern: RegExp;
+  /** Why it asks: the reason from the config, or one naming the pattern if that is empty. */
+  reason: string;
+}
+
+/** Reads excludedBashCommands: every entry is { "pattern": …, "reason": … }; the reason may be omitted or empty. */
+function exclusionList(value: unknown, field: string): Exclusion[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error(`"${field}" must be an array`);
+  return value.map((entry) => {
+    const isObject = typeof entry === "object" && entry !== null && !Array.isArray(entry);
+    // No other keys, so a typo like "reasn" doesn't go unnoticed.
+    if (
+      !isObject ||
+      typeof entry.pattern !== "string" ||
+      (entry.reason !== undefined && typeof entry.reason !== "string") ||
+      !Object.keys(entry).every((key) => key === "pattern" || key === "reason")
+    ) {
+      throw new Error(`"${field}" entries must be { "pattern": …, "reason": … }: ${JSON.stringify(entry)}`);
     }
+    return {
+      pattern: compilePattern(entry.pattern, field),
+      reason: entry.reason || `matches the excluded pattern ${entry.pattern}`,
+    };
   });
 }
 
@@ -96,7 +128,7 @@ export async function parseAllowList(config: any): Promise<AllowList> {
     alwaysAllow: stringList(config.alwaysAllow, "alwaysAllow"),
     allowInsideWorkingDirectory: stringList(config.allowInsideWorkingDirectory, "allowInsideWorkingDirectory"),
     allowedBashCommands: regexList(config.allowedBashCommands, "allowedBashCommands"),
-    excludedBashCommands: regexList(config.excludedBashCommands, "excludedBashCommands"),
+    excludedBashCommands: exclusionList(config.excludedBashCommands, "excludedBashCommands"),
     bashValidators: await loadValidators(config.bashValidators),
   };
 }
@@ -259,7 +291,7 @@ function wordPath(word: Word, base: string): string | undefined {
  * an allowed pattern, and every argument must pass the generic check.
  */
 function commandIsAllowed(command: ShellCommand, allowList: AllowList, root: string, base: string): boolean {
-  if (allowList.excludedBashCommands.some((pattern) => pattern.test(command.text))) return false;
+  if (allowList.excludedBashCommands.some((exclusion) => exclusion.pattern.test(command.text))) return false;
   const helpers: ValidatorHelpers = {
     argumentIsInside: (word) => argumentIsInside(word, root, base),
     isInside: (word) => wordIsInside(word, root, base),

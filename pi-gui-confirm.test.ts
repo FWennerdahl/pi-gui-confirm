@@ -263,7 +263,7 @@ describe("pattern rules", () => {
   test("excluded patterns win over allowed ones", async () => {
     const allowList = await parseAllowList({
       allowedBashCommands: ["ls( .*)?"],
-      excludedBashCommands: ["ls .*-[a-zA-Z]*L.*"],
+      excludedBashCommands: [{ pattern: "ls .*-[a-zA-Z]*L.*" }],
     });
     assert.equal(isAllowed("ls -R stubs", allowList), true);
     assert.equal(isAllowed("ls -RL stubs", allowList), false);
@@ -283,6 +283,30 @@ describe("pattern rules", () => {
   test("invalid patterns make the config invalid", async () => {
     await assert.rejects(parseAllowList({ allowedBashCommands: ["ls("] }), /invalid regular expression/);
   });
+
+  test("exclusions carry a reason, or a generic one naming the pattern", async () => {
+    const allowList = await parseAllowList({
+      excludedBashCommands: [
+        { pattern: "ls( .*)? -\\w*L.*", reason: "follows symlinks" },
+        { pattern: "ls x" },
+        { pattern: "ls y", reason: "" },
+      ],
+    });
+    assert.deepEqual(
+      allowList.excludedBashCommands.map((exclusion) => exclusion.reason),
+      ["follows symlinks", "matches the excluded pattern ls x", "matches the excluded pattern ls y"],
+    );
+  });
+
+  test("invalid exclusions make the config invalid", async () => {
+    const invalid = (entry: unknown) => parseAllowList({ excludedBashCommands: [entry] });
+    await assert.rejects(invalid("ls"), /must be \{ "pattern"/); // a plain string isn't enough
+    await assert.rejects(invalid({ reason: "no pattern" }), /must be \{ "pattern"/);
+    await assert.rejects(invalid({ pattern: "ls", reasn: "typo" }), /must be \{ "pattern"/);
+    await assert.rejects(invalid({ pattern: "ls", reason: 1 }), /must be \{ "pattern"/);
+    await assert.rejects(invalid({ pattern: "ls(" }), /invalid regular expression/);
+    await assert.rejects(parseAllowList({ excludedBashCommands: "ls" }), /must be an array/);
+  });
 });
 
 describe("validators", () => {
@@ -301,7 +325,7 @@ describe("validators", () => {
   test("excluded patterns win over validators", async () => {
     const allowList = await parseAllowList({
       bashValidators: { grep: "grep" },
-      excludedBashCommands: ["grep .*-[a-zA-Z]*i.*"],
+      excludedBashCommands: [{ pattern: "grep .*-[a-zA-Z]*i.*" }],
     });
     assert.equal(isAllowed("grep -rn x .", allowList), true);
     assert.equal(isAllowed("grep -rni x .", allowList), false);

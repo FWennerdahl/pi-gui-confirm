@@ -49,7 +49,8 @@ These hold until the maintainer decides otherwise (then update this file, see be
   escapes like bash/zsh do. Anything it doesn't fully understand (`$`, backticks, redirections,
   subshells, groups, syntax errors, unusual whitespace) makes the whole line ask.
 - **Patterns** in `allowedBashCommands`/`excludedBashCommands` are plain regexes matched against the
-  whole normalized command (words joined by single spaces). There is no `{path}` token: it was tried
+  whole normalized command (words joined by single spaces). Exclusions are `{ pattern, reason }`; a
+  missing or empty reason reports the pattern instead. There is no `{path}` token: it was tried
   and dropped as too complex.
 - **Every argument is checked as a possible path** (`argumentIsInside`). Which arguments a program
   reads as paths isn't known, so all of them must stay inside the session folder (`ctx.cwd`).

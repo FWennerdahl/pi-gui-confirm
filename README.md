@@ -26,7 +26,7 @@ immediately.
 | `alwaysAllow` | Tool names that never ask. `*` is a wildcard, e.g. `"mcp__grafana__get_*"`. |
 | `allowInsideWorkingDirectory` | Tool names that don't ask when their `path` is inside the session folder (no path means the session folder). |
 | `allowedBashCommands` | Regular expressions for shell commands that don't ask. A pattern must match the whole command. |
-| `excludedBashCommands` | Regular expressions for shell commands that ask even if allowed above. |
+| `excludedBashCommands` | Shell commands that ask even if allowed above, as `{ "pattern": …, "reason": … }`: a regular expression, and why it asks. Omit the reason (or leave it empty) to report the pattern instead. |
 | `bashValidators` | Command names mapped to validators in `validators/`, e.g. `{ "grep": "grep" }`. See below. |
 
 Shell command lines are split at `|`, `&`, `;`, `&&`, `||` and newlines, and every command must be
