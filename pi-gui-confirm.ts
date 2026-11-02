@@ -615,11 +615,13 @@ export function toolPathIsAllowed(
   // PACKAGE.JSON is package.json there. Their filesystems also match some non-ASCII characters to ASCII
   // letters (package.jſon is package.json on macOS), which lowercasing doesn't cover, so such paths ask.
   const real = realOrResolved(target);
-  const rel = relative(realOrResolved(root), real);
-  if (/[^\x00-\x7F]/.test(rel)) return false;
+  // Both the path as given and where it really leads: with .pi -> config/pi, writing
+  // .pi/extensions/x.ts lands in config/pi, but pi still loads it through .pi.
+  const rels = [relative(root, target), relative(realOrResolved(root), real)];
+  if (rels.some((rel) => /[^\x00-\x7F]/.test(rel))) return false;
   if (configFiles.some((file) => realOrResolved(file).toLowerCase() === real.toLowerCase())) return false;
   const names = protectedPaths.map((name) => name.toLowerCase());
-  return !rel.toLowerCase().split(sep).some((part) => names.includes(part));
+  return !rels.some((rel) => rel.toLowerCase().split(sep).some((part) => names.includes(part)));
 }
 
 /**

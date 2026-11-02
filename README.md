@@ -65,6 +65,10 @@ hooks and `core.fsmonitor` from `.git`, pi loads extensions from `.pi`, direnv r
 (`PACKAGE.JSON` asks too), and a `"write"` path with non-ASCII characters always asks: macOS treats
 `package.jſon` as `package.json`.
 
+Names are checked in the path as given and where its symlinks lead. A protected file that is a symlink
+can still be changed through its target: with `.git/hooks/pre-commit -> ../../scripts/pre-commit`,
+writing `scripts/pre-commit` doesn't ask. Add such folders to `protectedPaths`.
+
 ### Paths in shell commands
 
 Shell command lines are split at `|`, `&`, `;`, `&&`, `||` and newlines, and every command must be

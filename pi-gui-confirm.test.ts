@@ -13,6 +13,7 @@
  *   repo/dangling -> outside/new.txt         symlinks to things that don't exist yet: outside,
  *   repo/dangling-dir -> outside/missing/
  *   repo/dangling-inside -> stubs/new.ts     and inside
+ *   repo/.pi -> config/pi/  a protected name that is a symlink to a place inside
  *   outside/
  */
 import assert from "node:assert/strict";
@@ -50,6 +51,8 @@ before(() => {
   symlinkSync(join(fixture, "outside", "new.txt"), join(repo, "dangling"));
   symlinkSync(join(fixture, "outside", "missing"), join(repo, "dangling-dir"));
   symlinkSync(join(repo, "stubs", "new.ts"), join(repo, "dangling-inside"));
+  mkdirSync(join(repo, "config", "pi"), { recursive: true });
+  symlinkSync(join(repo, "config", "pi"), join(repo, ".pi"));
 });
 
 after(() => rmSync(fixture, { recursive: true, force: true }));
@@ -466,6 +469,8 @@ describe("tool paths", () => {
     assert.equal(allowed("write", "dangling"), false); // creates outside/new.txt
     assert.equal(allowed("write", "dangling-dir/x"), false);
     assert.equal(allowed("write", "dangling-inside"), true); // creates stubs/new.ts
+    // .pi -> config/pi: the real path has no protected name, but pi loads extensions through .pi.
+    assert.equal(allowed("write", ".pi/extensions/x.ts"), false);
   });
 
   test("protectedPaths must be names", async () => {

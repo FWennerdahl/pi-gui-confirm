@@ -49,7 +49,8 @@ These hold until the maintainer decides otherwise (then update this file, see be
   until pi exports it) and written back into the tool call, so the tool uses exactly the checked
   path. Symlinks are followed, also links to targets that don't exist yet; paths that don't exist are
   checked through their nearest existing folder.
-  `"write"` paths also ask for `protectedPaths` (names matched at any depth, without case; non-ASCII write paths ask) and the config file,
+  `"write"` paths also ask for `protectedPaths` (names matched at any depth, in the path as given and
+  where it leads, without case; non-ASCII write paths ask) and the config file,
   which make code run later or decide what is allowed. Matching entries add up their checks.
   `bash` can't be listed: it has its own rules.
 - **Shell parsing.** `parseBashCommands` splits a line into commands and words, removing quotes and
