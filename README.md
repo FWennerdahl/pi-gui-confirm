@@ -26,7 +26,7 @@ immediately.
 | `allowedTools` | Tools that don't ask, as `{ "name": …, "paths": … }`. `name` may use `*` as a wildcard, e.g. `"mcp__grafana__get_*"`. `paths` (optional) declares which arguments are file paths and whether the tool reads or writes them, e.g. `{ "path": "read" }`. See below. |
 | `protectedPaths` | Names that `"write"` paths always ask for, wherever they appear in the path, e.g. `[".git", ".pi", ".envrc", "package.json"]`. |
 | `allowedBashCommands` | Regular expressions for shell commands that don't ask. A pattern must match the whole command. |
-| `excludedBashCommands` | Shell commands that ask even if allowed above, as `{ "pattern": …, "reason": … }`: a regular expression, and why it asks. Omit the reason (or leave it empty) to report the pattern instead. |
+| `excludedBashCommands` | Shell commands that ask even if allowed above, as `{ "pattern": …, "reason": … }`: a regular expression, and why it asks. The reason isn't shown in the dialog yet (see "Say why a tool call asks" in TODO.md); write it anyway, it documents the rule. |
 | `bashValidators` | Command names mapped to validators in `validators/`, e.g. `{ "grep": "grep" }`. See below. |
 
 ### Allowed tools and their paths
@@ -135,7 +135,8 @@ Included:
 
 To add one, create `validators/<name>.ts` with a default export of type `BashValidator`
 (`validators/types.ts`): it gets the command's arguments and the core's path checks, and returns
-`{ allowed: true }` or `{ allowed: false, reason }`.
+`{ allowed: true }` or `{ allowed: false, reason }`. The reason isn't shown in the dialog yet, like
+the reasons of `excludedBashCommands`.
 
 ### Shell environment
 
