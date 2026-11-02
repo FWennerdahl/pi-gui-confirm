@@ -19,7 +19,7 @@
  * The file is read on every tool call. If it is missing or invalid, every tool call asks.
  */
 import { type ExtensionAPI, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { accessSync, constants, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, readdirSync, readFileSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -625,16 +625,31 @@ export function toolPathIsAllowed(
 /**
  * The path with symlinks followed, so a link can't escape the session folder. For a path that doesn't
  * exist (yet), its nearest existing folder is followed instead: a new file in a symlinked folder
- * (link/new.txt) is where the link points.
+ * (link/new.txt) is where the link points. So is a symlink to a file that doesn't exist yet.
  */
-function realOrResolved(path: string): string {
+function realOrResolved(path: string, depth = 0): string {
   const absolute = resolve(path);
   for (let existing = absolute; ; existing = dirname(existing)) {
     try {
       return join(realpathSync(existing), relative(existing, absolute));
     } catch {
+      // A symlink to something that doesn't exist (yet): writing through it creates its target, so it is
+      // followed. Past 100 links the system refuses the path anyway (its limit is lower), so any answer is safe.
+      const target = linkTarget(existing);
+      if (target !== undefined && depth < 100) {
+        return realOrResolved(join(resolve(dirname(existing), target), relative(existing, absolute)), depth + 1);
+      }
       if (dirname(existing) === existing) return absolute; // nothing exists, not even the root
     }
+  }
+}
+
+/** The target of a symlink, or undefined if `path` isn't one. */
+function linkTarget(path: string): string | undefined {
+  try {
+    return readlinkSync(path);
+  } catch {
+    return undefined;
   }
 }
 

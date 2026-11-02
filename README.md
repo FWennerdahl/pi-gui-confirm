@@ -52,7 +52,7 @@ as file paths:
 - Paths are resolved the way pi's own tools resolve them (a leading `@` is dropped, `~` and
   `file://` URLs are expanded) and written back into the tool call, so the tool uses exactly the
   path that was checked. Symlinks are followed: `link/x` with `link` pointing outside asks, and so
-  does a new file in such a folder (`link/new.txt`).
+  does a new file in such a folder (`link/new.txt`), or a link to a file that doesn't exist yet.
 - If several entries match a tool, all their declared paths are checked; an argument declared both
   `"read"` and `"write"` counts as `"write"`. An entry can add checks, never remove them.
 - `bash` can't be listed: shell commands have their own rules (below).

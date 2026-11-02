@@ -10,6 +10,9 @@
  *   repo/hooks -> .git/hooks/      a symlink to a protected place inside
  *   repo/settings.json -> stubs/package.scala   a symlink to the file the tests use as config file
  *   repo/flags/-L           a file named like a flag
+ *   repo/dangling -> outside/new.txt         symlinks to things that don't exist yet: outside,
+ *   repo/dangling-dir -> outside/missing/
+ *   repo/dangling-inside -> stubs/new.ts     and inside
  *   outside/
  */
 import assert from "node:assert/strict";
@@ -44,6 +47,9 @@ before(() => {
   symlinkSync(join(repo, "stubs", "package.scala"), join(repo, "settings.json"));
   mkdirSync(join(repo, "flags"));
   writeFileSync(join(repo, "flags", "-L"), "");
+  symlinkSync(join(fixture, "outside", "new.txt"), join(repo, "dangling"));
+  symlinkSync(join(fixture, "outside", "missing"), join(repo, "dangling-dir"));
+  symlinkSync(join(repo, "stubs", "new.ts"), join(repo, "dangling-inside"));
 });
 
 after(() => rmSync(fixture, { recursive: true, force: true }));
@@ -456,6 +462,10 @@ describe("tool paths", () => {
     assert.equal(allowed("write", "hooks/pre-commit"), false);
     // settings.json -> the config file.
     assert.equal(allowed("write", "settings.json"), false);
+    // Links to things that don't exist yet: writing creates their target.
+    assert.equal(allowed("write", "dangling"), false); // creates outside/new.txt
+    assert.equal(allowed("write", "dangling-dir/x"), false);
+    assert.equal(allowed("write", "dangling-inside"), true); // creates stubs/new.ts
   });
 
   test("protectedPaths must be names", async () => {
