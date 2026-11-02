@@ -9,6 +9,7 @@
  *   repo/docs-link -> stubs/       a symlink to another place inside
  *   repo/hooks -> .git/hooks/      a symlink to a protected place inside
  *   repo/settings.json -> stubs/package.scala   a symlink to the file the tests use as config file
+ *   repo/flags/-L           a file named like a flag
  *   outside/
  */
 import assert from "node:assert/strict";
@@ -41,6 +42,8 @@ before(() => {
   symlinkSync(join(repo, "stubs"), join(repo, "docs-link"));
   symlinkSync(join(repo, ".git", "hooks"), join(repo, "hooks"));
   symlinkSync(join(repo, "stubs", "package.scala"), join(repo, "settings.json"));
+  mkdirSync(join(repo, "flags"));
+  writeFileSync(join(repo, "flags", "-L"), "");
 });
 
 after(() => rmSync(fixture, { recursive: true, force: true }));
@@ -214,6 +217,11 @@ describe("tilde and zsh's =", () => {
 describe("globs", () => {
   cases([
     ["ls stubs/*", true],
+    ["ls *", false], // the session folder holds link, which points outside
+    ["ls l*", false], // would expand to link
+    ["cat l*/secret", false], // a glob in a folder part
+    ["ls flags/*", false], // flags/ holds -L, a name that could become a flag
+    ["ls missing/*", false], // a folder that doesn't exist can't be listed
     ["ls .*", false], // can match .. in bash
     ["ls */..", false],
     ["ls '.*'", true], // quoted: not expanded

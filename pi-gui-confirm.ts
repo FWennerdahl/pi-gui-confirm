@@ -19,7 +19,7 @@
  * The file is read on every tool call. If it is missing or invalid, every tool call asks.
  */
 import { type ExtensionAPI, SettingsManager } from "@earendil-works/pi-coding-agent";
-import { accessSync, constants, existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -354,7 +354,9 @@ function commandIsAllowed(command: ShellCommand, allowList: AllowList, root: str
   const [name, ...args] = command.words;
   // The shell expands unquoted globs to file names before the program runs, whatever it does with
   // its arguments: grep /etc/p* . turns the "search pattern" into /etc/passwd and more.
-  if (!args.filter((word) => word.unquotedGlob).every(helpers.isInside)) return false;
+  if (!command.words.filter((word) => word.unquotedGlob).every((word) => globIsSafe(word, root, base))) {
+    return false;
+  }
 
   const validator = allowList.bashValidators.get(unhide(name.text));
   if (validator) {
@@ -404,6 +406,29 @@ function argumentIsInside(word: Word, root: string, base: string): boolean {
 function wordIsInside(word: Word, root: string, base: string): boolean {
   const path = wordPath(word, base);
   return path !== undefined && isInside(root, path);
+}
+
+/**
+ * Whether an unquoted glob can only expand to files inside the session folder that don't look like
+ * flags. Which entries match depends on shell options (dotglob, zsh's GLOB_DOTS), so every entry of the
+ * folder the glob looks in is checked instead: a match is always one of them.
+ */
+function globIsSafe(word: Word, root: string, base: string): boolean {
+  const text = unhide(word.text);
+  // A glob in a folder part (l*/secret): its matches are folders that would be followed.
+  if (/[*?[]/.test(text.slice(0, text.lastIndexOf("/") + 1))) return false;
+  const path = wordPath(word, base);
+  if (path === undefined) return false;
+  const folder = dirname(path);
+  if (!isInside(root, folder)) return false;
+  let entries: string[];
+  try {
+    entries = readdirSync(folder);
+  } catch {
+    return false; // can't list it, so can't tell what matches
+  }
+  // A name starting with - would become a flag: with a file named -L, ls * runs ls -L.
+  return entries.every((entry) => !entry.startsWith("-") && isInside(root, join(folder, entry)));
 }
 
 /** Where a cd goes (following the path by text, as cd does), or undefined if that can't be known in advance. */

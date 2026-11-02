@@ -63,6 +63,9 @@ These hold until the maintainer decides otherwise (then update this file, see be
   Flags pass, but every possible attached value (every rest of the word) is checked as a path;
   `--name=value` and `name=value` check the value; quotes don't exempt a word. Accepted cost: arguments
   that only look like outside paths ask (`grep -r "/api/" .`), unless the command has a validator.
+- **Globs** are checked through the folder they look in, not their matches, since which entries match
+  depends on shell options: every entry must be inside and not start with `-`. Globs in a folder part
+  ask.
 - **Validators** (`validators/<name>.ts`, enabled per command in `bashValidators`) decide about one
   command instead of `allowedBashCommands` and the generic check, and may allow or reject for any
   reason, and say why. The core still applies first: the parser, the folder tracking, unquoted

@@ -89,7 +89,10 @@ Which arguments a program reads as paths isn't known, so every argument is check
   the `=` in such words, so `a=~` counts as your home folder.
 - Quotes don't matter: `ls "/etc"` asks too. Arguments that aren't paths but look like paths outside
   the folder ask as well, e.g. the search pattern in `grep -r "/api/" .`.
-- Unquoted globs (`*.scala`) are checked like paths; `.*` and globs next to `..` ask.
+- Unquoted globs are checked through the folder they look in: every entry there must be inside the
+  session folder and must not start with `-` (it would become a flag). So `ls stubs/*.ts` is allowed,
+  but `ls *` asks if the folder holds a symlink pointing outside. Globs in a folder part (`*/x`), `.*`
+  and globs next to `..` ask.
 - `~` and `~/…` are expanded; `~user`, `~+`, `~-` and zsh's `=cmd` ask.
 - The folder each command runs in must be inside the session folder too. `cd` moves it when it runs
   for certain and goes to an existing folder; otherwise every later command asks
