@@ -80,8 +80,9 @@ describe("options that may or may not take the next word", () => {
     [["--context", "3", "/etc/passwd", "src"], false],
     [["-C3", "/api/", "src"], true],
     [["--context=3", "/api/", "src"], true],
-    // An abbreviated long option may take the next word: --fil is --file.
-    [["--fil", "/etc/passwd", "src"], false],
+    // Abbreviations of --regexp give the pattern, so /etc/passwd is a file to search.
+    [["--reg=x", "/etc/passwd"], false],
+    [["--rege", "x", "/etc/passwd"], false],
     [["--max", "5", "x", "src"], true], // nothing outside, so allowed even without knowing the pattern
   ]);
 });

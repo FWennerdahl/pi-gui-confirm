@@ -60,6 +60,8 @@ const grep: BashValidator = (args, { argumentIsInside }) => {
       if (name === "regexp" || name === "file") patternGiven = true;
       if (equals !== -1) {
         if (name === "regexp") notPaths.add(word);
+        // --reg=x is --regexp=x: the pattern is given, so the first operand may be a file.
+        else if ("regexp".startsWith(name) || "file".startsWith(name)) firstOperandUncertain = true;
       } else if (LONG_WITH_VALUE.has(name)) {
         const value = args[++i];
         if (value && name === "regexp") notPaths.add(value);
