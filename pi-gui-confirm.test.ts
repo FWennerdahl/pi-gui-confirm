@@ -420,6 +420,13 @@ describe("tool paths", () => {
     assert.equal(allowed("write", "packages/api/package.json"), false);
     assert.equal(allowed("write", ".envrc"), false);
     assert.equal(allowed("write", "my.git.txt"), true); // only whole names match
+    // Case is ignored, as on macOS, where .GIT/config is .git/config. The same on Linux.
+    assert.equal(allowed("write", ".GIT/config"), false);
+    assert.equal(allowed("write", "PACKAGE.JSON"), false);
+    assert.equal(allowed("write", "stubs/PACKAGE.SCALA"), false); // the config file
+    // Non-ASCII paths ask: macOS opens package.json for package.jſon (long s).
+    assert.equal(allowed("write", "package.j\u017Fon"), false);
+    assert.equal(allowed("write", "stubs/åäö.ts"), false);
   });
 
   test("symlinks are judged by where they really point", () => {

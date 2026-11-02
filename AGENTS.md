@@ -48,7 +48,7 @@ These hold until the maintainer decides otherwise (then update this file, see be
   paths are resolved like pi's own tools (`resolveToolPath` mimics pi's internal `resolveToCwd`
   until pi exports it) and written back into the tool call, so the tool uses exactly the checked
   path. Symlinks are followed, for paths that don't exist yet through their nearest existing folder.
-  `"write"` paths also ask for `protectedPaths` (names matched at any depth) and the config file,
+  `"write"` paths also ask for `protectedPaths` (names matched at any depth, without case; non-ASCII write paths ask) and the config file,
   which make code run later or decide what is allowed. Matching entries add up their checks.
   `bash` can't be listed: it has its own rules.
 - **Shell parsing.** `parseBashCommands` splits a line into commands and words, removing quotes and

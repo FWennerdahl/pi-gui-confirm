@@ -565,7 +565,7 @@ export function toolCallIsAllowed(
  * Whether a tool may use `target` without asking: it must be inside the session folder `root`. A
  * "write" path must also stay away from protected paths: a name from protectedPaths anywhere in the
  * path (.git/hooks/x, packages/a/package.json), or one of `configFiles`, so it can't change what is
- * allowed.
+ * allowed. Names are compared without case, and paths with non-ASCII characters ask.
  */
 export function toolPathIsAllowed(
   use: PathUse,
@@ -576,10 +576,15 @@ export function toolPathIsAllowed(
 ): boolean {
   if (!isInside(root, target)) return false;
   if (use === "read") return true;
+  // macOS and Windows ignore case in file names by default, so names are compared in lowercase:
+  // PACKAGE.JSON is package.json there. Their filesystems also match some non-ASCII characters to ASCII
+  // letters (package.jſon is package.json on macOS), which lowercasing doesn't cover, so such paths ask.
   const real = realOrResolved(target);
-  if (configFiles.some((file) => realOrResolved(file) === real)) return false;
-  const parts = relative(realOrResolved(root), real).split(sep);
-  return !parts.some((part) => protectedPaths.includes(part));
+  const rel = relative(realOrResolved(root), real);
+  if (/[^\x00-\x7F]/.test(rel)) return false;
+  if (configFiles.some((file) => realOrResolved(file).toLowerCase() === real.toLowerCase())) return false;
+  const names = protectedPaths.map((name) => name.toLowerCase());
+  return !rel.toLowerCase().split(sep).some((part) => names.includes(part));
 }
 
 /**

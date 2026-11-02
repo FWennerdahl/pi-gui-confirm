@@ -61,7 +61,9 @@ as file paths:
 `protectedPaths` anywhere in the path (`.git/hooks/pre-commit`, `packages/api/package.json`), and
 this extension's config file. They protect files that make code run later without asking: git runs
 hooks and `core.fsmonitor` from `.git`, pi loads extensions from `.pi`, direnv runs `.envrc`, npm runs
-`package.json` scripts, and the config file decides what is allowed.
+`package.json` scripts, and the config file decides what is allowed. Names are compared without case
+(`PACKAGE.JSON` asks too), and a `"write"` path with non-ASCII characters always asks: macOS treats
+`package.jſon` as `package.json`.
 
 ### Paths in shell commands
 
