@@ -1,14 +1,19 @@
 {
-  "alwaysAllow": [
-    "list_threads",
-    "read_thread",
-    "list_scheduled_tasks",
-    "mcp__slack__slack_search_public_and_private",
-    "mcp__slack__slack_read_thread",
-    "mcp__slack__slack_read_file",
-    "mcp__linear__get_issue"
+  "allowedTools": [
+    { "name": "list_threads" },
+    { "name": "read_thread" },
+    { "name": "list_scheduled_tasks" },
+    { "name": "mcp__slack__slack_search_public_and_private" },
+    { "name": "mcp__slack__slack_read_thread" },
+    { "name": "mcp__slack__slack_read_file" },
+    { "name": "mcp__linear__get_issue" },
+    { "name": "read", "paths": { "path": "read" } },
+    { "name": "grep", "paths": { "path": "read" } },
+    { "name": "find", "paths": { "path": "read" } },
+    { "name": "ls", "paths": { "path": "read" } },
+    { "name": "edit", "paths": { "path": "write" } },
+    { "name": "write", "paths": { "path": "write" } }
   ],
-  "allowInsideWorkingDirectory": ["read", "grep", "find", "ls", "edit", "write"],
   "protectedPaths": [".git", ".pi", ".envrc", "package.json", "node_modules", ".npmrc"],
   "allowedBashCommands": [
     "ls( .*)?",
