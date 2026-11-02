@@ -173,6 +173,9 @@ describe("shell command paths", () => {
     ["ls /etc stubs", false],
     ["ls ..", false],
     ["ls stubs/../..", false],
+    ["cat link/../x", false], // the shell goes up from where link points
+    ["ls stubs/..", false], // .. after a folder name asks, even inside
+    ["cd stubs && ls ../stubs", true], // leading .. is fine
     ["ls link", false],
     ["ls docs-link", true], // a symlink to another place inside
     ["ls link/missing", false], // doesn't exist: checked through its nearest existing folder, link

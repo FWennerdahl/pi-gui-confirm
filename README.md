@@ -81,6 +81,8 @@ Which arguments a program reads as paths isn't known, so every argument is check
 
 - `ls -la stubs` is allowed; `ls /etc`, `ls ..` and `ls link` (a symlink pointing outside) ask. A
   path that doesn't exist is checked through its nearest existing folder (`ls link/missing` asks).
+- `..` after a folder name (`stubs/../x`) asks: through a symlink, the shell goes up from where it
+  points.
 - Flags pass. For `--name=value` the value is checked. For a flag that may have a value attached
   (`-f/etc/passwd`, or `-flink` where `link` is a symlink pointing outside), every possible value,
   i.e. every rest of the word, is checked as a path. So an attached value containing `/` always

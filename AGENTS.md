@@ -63,6 +63,7 @@ These hold until the maintainer decides otherwise (then update this file, see be
   Flags pass, but every possible attached value (every rest of the word) is checked as a path;
   `--name=value` and `name=value` check the value; quotes don't exempt a word. Accepted cost: arguments
   that only look like outside paths ask (`grep -r "/api/" .`), unless the command has a validator.
+  `..` after a folder name asks: through a symlink, the shell goes up from where it points.
 - **Globs** are checked through the folder they look in, not their matches, since which entries match
   depends on shell options: every entry must be inside and not start with `-`. Globs in a folder part
   ask.

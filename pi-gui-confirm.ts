@@ -327,12 +327,19 @@ export function parseBashCommands(commandLine: string): ShellCommand[] | undefin
   return commands.length > 0 ? commands : undefined;
 }
 
+/** Whether a .. follows a folder name (link/../x): the shell goes up from where that folder really is. */
+function climbsAfterName(text: string): boolean {
+  const parts = text.split("/");
+  return parts.some((part, i) => part === ".." && parts.slice(0, i).some((p) => p !== ".." && p !== "." && p !== ""));
+}
+
 /** Where a word points, resolved from `base`, or undefined if the shell may expand it to somewhere else. */
 function wordPath(word: Word, base: string): string | undefined {
   const text = unhide(word.text);
   if (word.plainStart && text.startsWith("=")) return undefined; // zsh: =cmd is the path of cmd
   // A glob starting with a dot can match .. (bash), and .. next to a glob is hard to follow.
   if (word.unquotedGlob && /(^|\/)(\.[^/]*[*?[]|\.\.(\/|$))/.test(text)) return undefined;
+  if (climbsAfterName(text)) return undefined;
   if (word.plainStart && text.startsWith("~")) {
     if (text !== "~" && !text.startsWith("~/")) return undefined; // ~user, ~+, ~-
     return process.env.HOME ? resolve(process.env.HOME + text.slice(1)) : undefined;
