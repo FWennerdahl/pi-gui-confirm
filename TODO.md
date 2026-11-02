@@ -66,6 +66,44 @@ To decide:
 - Read both on every tool call, as today, so changes apply immediately.
 - Protect the user's config file from edits as well (`configFiles` in `toolPathIsAllowed`).
 
+## Project-specific configs
+
+Allow a `pi-gui-confirm.json` in a project's `.pi/` folder (pi's folder for project configuration,
+next to `.pi/settings.json`), so each project can allow its own commands and protect its own paths.
+Example: allow `npm run typecheck` only in repos whose script is plain `tsc`. Allowed globally, it
+runs whatever each repo's script says; that's why it was removed from the config.
+
+To decide:
+
+- **Trust.** A cloned repo could ship a config that allows anything. Options: only use it when pi's
+  project trust is granted (see `docs/security.md` in `@earendil-works/pi-coding-agent`; check whether
+  extensions can read that decision); or an own "allow" step pinned to the file's content, like
+  `direnv allow`, that asks again when the file changes; or let project configs only restrict (more
+  `protectedPaths` and `excludedBashCommands`), which is safe without trust.
+- **Merging** with the global config (and the user's, see above): per field, add or replace.
+- **Protection.** `.pi` is in `protectedPaths` already; also add the project config to `configFiles`,
+  so the protection doesn't depend on the user's list.
+- **Errors.** An invalid project config makes every tool call ask, with a warning naming the file.
+
+## Validate the config with a schema
+
+Some invalid configs are accepted today, and they quietly remove checks:
+
+- `{ "name": "read", "paths": null }` is treated like no `paths`, so `read /etc/passwd` is allowed
+  (`entry.paths ?? {}` in `toolRuleList` turns `null` into `{}`).
+- Unknown top-level fields are ignored: a typo like `"protectedPath": [".git"]` protects nothing.
+- A top-level array or `false` is accepted (harmless: it allows nothing).
+
+Instead of more hand-written checks, describe the config once as a TypeBox schema (already a
+dependency, used in `bash-summary.ts`), with `additionalProperties: false` on every object, and
+derive the `AllowList` input type from it with `Static<typeof …>`. Validate with `Value.Check` and
+report `Value.Errors`. Don't use `Value.Parse`: with the `correctiveParse` setting on, it removes
+unknown keys and converts types instead of failing. Checks the schema can't express stay as code
+after it: compiling the regexes, names in `protectedPaths` without `/`, loading the validators.
+
+Add tests for the cases above, and update "Fallbacks" in README.md: unknown fields make the config
+invalid.
+
 ## Get a second review of the code base
 
 The whole extension is security logic with many edge cases (`pi-gui-confirm.ts`, `bash-summary.ts`,

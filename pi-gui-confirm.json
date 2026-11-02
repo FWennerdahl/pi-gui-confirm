@@ -24,8 +24,7 @@
     "tail( .*)?",
     "cat( .*)?",
     "wc( .*)?",
-    "cd( .*)?",
-    "npm run( -s)? typecheck"
+    "cd( .*)?"
   ],
   "excludedBashCommands": [
     {

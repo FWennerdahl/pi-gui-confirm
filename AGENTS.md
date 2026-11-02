@@ -85,7 +85,9 @@ These hold until the maintainer decides otherwise (then update this file, see be
   user's own configuration.
 - **Commands that read are the default.** When proposing rules for the config, stick to commands that
   read files, or run code that only reads (like a type check) and that allowed edits can't change
-  (its files are in `protectedPaths`). The path check limits where commands look, not what they do.
+  (its files are in `protectedPaths`). The command itself must be fixed: `npm run typecheck` runs
+  whatever the repo's script says, which differs per repo. The path check limits where commands
+  look, not what they do.
   The user may allow more (writing, or running code that allowed edits can change, like tests):
   point out what such a rule makes possible, then follow the user's decision.
 
