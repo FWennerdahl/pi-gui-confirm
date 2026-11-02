@@ -185,8 +185,8 @@ export async function parseAllowList(config: any): Promise<AllowList> {
   };
 }
 
-function loadAllowList(): Promise<AllowList> {
-  return parseAllowList(JSON.parse(readFileSync(configPath(), "utf8")));
+function loadAllowList(configFile: string): Promise<AllowList> {
+  return parseAllowList(JSON.parse(readFileSync(configFile, "utf8")));
 }
 
 function escapeRegExp(text: string): string {
@@ -666,13 +666,17 @@ function preview(text: string, max = 1500): string {
   return text.length > max ? `${text.slice(0, max)}\n… (${text.length - max} more characters)` : text;
 }
 
-export default function (pi: ExtensionAPI) {
+/**
+ * Registers the confirmation handler, with the allow lists read from `configFile` on every tool call.
+ * Separate from the default export so tests can use their own config file.
+ */
+export function register(pi: ExtensionAPI, configFile: string) {
   let lastConfigError: string | undefined;
 
   pi.on("tool_call", async (event, ctx) => {
     let allowList = NOTHING_ALLOWED;
     try {
-      allowList = await loadAllowList();
+      allowList = await loadAllowList(configFile);
       lastConfigError = undefined;
     } catch (error) {
       const message = `pi-gui-confirm.json could not be loaded, so every tool call asks: ${
@@ -689,7 +693,7 @@ export default function (pi: ExtensionAPI) {
       if (commands && shellIsSupported(ctx.cwd) && bashIsAllowed(commands, allowList, ctx.cwd)) {
         return undefined;
       }
-    } else if (toolCallIsAllowed(event.toolName, input, allowList, ctx.cwd, [configPath()])) {
+    } else if (toolCallIsAllowed(event.toolName, input, allowList, ctx.cwd, [configFile])) {
       return undefined;
     }
 
@@ -714,4 +718,8 @@ export default function (pi: ExtensionAPI) {
     const approved = await ctx.ui.confirm(title, details);
     return approved ? undefined : { block: true, reason: `User declined ${event.toolName}` };
   });
+}
+
+export default function (pi: ExtensionAPI) {
+  register(pi, configPath());
 }

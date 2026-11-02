@@ -21,11 +21,13 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   type AllowList,
   bashIsAllowed,
   parseAllowList,
   parseBashCommands,
+  register,
   resolveToolPath,
   shellIsSupported,
   toolCallIsAllowed,
@@ -544,5 +546,105 @@ describe("allowed tools", () => {
     await assert.rejects(invalid({ name: "bash" }), /can't include bash/);
     await assert.rejects(invalid({ name: "*" }), /can't include bash/); // a wildcard covering bash too
     await assert.rejects(parseAllowList({ allowedTools: "read" }), /must be an array/);
+  });
+});
+
+describe("tool_call handler", () => {
+  type Handler = (event: { toolName: string; input: Record<string, unknown> }, ctx: unknown) => Promise<unknown>;
+  // Inside the session folder, so a write to it asks only because it is the config file.
+  const configFile = () => join(repo, "handler-config.json");
+  let previousAgentDir: string | undefined;
+
+  // An empty pi folder, so the user's own settings (shellPath) don't affect the bash tests.
+  before(() => {
+    previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+    process.env.PI_CODING_AGENT_DIR = join(fixture, "agent");
+    mkdirSync(join(fixture, "agent"));
+  });
+  after(() => {
+    if (previousAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+  });
+
+  /**
+   * Writes `config` (an object, or text for a broken file), registers the handler with a fake pi, and
+   * returns a function that runs one tool call through it, plus the dialogs and warnings it showed.
+   */
+  function setUp(config: unknown, { hasUI = true, approve = true } = {}) {
+    writeFileSync(configFile(), typeof config === "string" ? config : JSON.stringify(config));
+    let handler: Handler | undefined;
+    const pi = { on: (event: string, fn: Handler) => event === "tool_call" && (handler = fn) };
+    register(pi as unknown as ExtensionAPI, configFile());
+    const dialogs: { title: string; details: string }[] = [];
+    const warnings: string[] = [];
+    const ctx = {
+      cwd: repo,
+      hasUI,
+      ui: {
+        confirm: async (title: string, details: string) => (dialogs.push({ title, details }), approve),
+        notify: (message: string) => warnings.push(message),
+      },
+    };
+    const call = (toolName: string, input: Record<string, unknown>) => handler!({ toolName, input }, ctx);
+    return { call, dialogs, warnings };
+  }
+
+  test("allowed calls run without a dialog", async () => {
+    const { call, dialogs } = setUp({
+      allowedTools: [{ name: "read", paths: { path: "read" } }],
+      allowedBashCommands: ["ls( .*)?"],
+    });
+    assert.equal(await call("read", { path: "stubs/package.scala" }), undefined);
+    assert.equal(await call("bash", { command: "ls stubs" }), undefined);
+    assert.equal(dialogs.length, 0);
+  });
+
+  test("declared paths reach the tool resolved", async () => {
+    const { call } = setUp({ allowedTools: [{ name: "read", paths: { path: "read" } }] });
+    const input = { path: "@stubs/package.scala" };
+    await call("read", input);
+    assert.equal(input.path, join(repo, "stubs", "package.scala"));
+  });
+
+  test("other calls ask, and the answer decides", async () => {
+    const approving = setUp({});
+    assert.equal(await approving.call("read", { path: "stubs/package.scala" }), undefined);
+    assert.equal(approving.dialogs.length, 1);
+    const declining = setUp({}, { approve: false });
+    assert.deepEqual(await declining.call("read", { path: "stubs/package.scala" }), {
+      block: true,
+      reason: "User declined read",
+    });
+  });
+
+  test("without a UI, calls that would ask are blocked", async () => {
+    const { call } = setUp({}, { hasUI: false });
+    assert.deepEqual(await call("bash", { command: "ls" }), {
+      block: true,
+      reason: "Blocked bash: confirmation required but no UI is available",
+    });
+  });
+
+  test("a broken config makes every call ask, with one warning", async () => {
+    // Would allow list_threads, but the trailing comma makes it invalid JSON.
+    const { call, dialogs, warnings } = setUp('{ "allowedTools": [{ "name": "list_threads" }], }');
+    await call("list_threads", {});
+    await call("list_threads", {});
+    assert.equal(dialogs.length, 2);
+    assert.equal(warnings.length, 1); // the same error isn't repeated on every call
+    assert.match(warnings[0], /could not be loaded/);
+  });
+
+  test("the config file it was given is protected", async () => {
+    const { call, dialogs } = setUp({ allowedTools: [{ name: "write", paths: { path: "write" } }] });
+    await call("write", { path: "stubs/new.ts", content: "" }); // allowed
+    await call("write", { path: "handler-config.json", content: "{}" }); // asks
+    assert.equal(dialogs.length, 1);
+  });
+
+  test("the bash summary becomes the dialog title", async () => {
+    const { call, dialogs } = setUp({});
+    await call("bash", { command: "ls /etc", summary: "List /etc" });
+    assert.deepEqual(dialogs, [{ title: "Run: List /etc", details: "ls /etc" }]);
   });
 });
