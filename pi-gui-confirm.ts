@@ -591,6 +591,8 @@ export function toolCallIsAllowed(
     if (target === undefined) return false;
     // The tool then uses exactly the path that was checked, even if pi's own rules change.
     if (value !== undefined) input[argument] = target;
+    // pi's read tries spelling variants of a missing path (note'file → note’file), which aren't checked.
+    if (use === "read" && value !== undefined && !existsSync(target)) return false;
     if (!toolPathIsAllowed(use, target, root, allowList.protectedPaths, configFiles)) return false;
   }
   return true;

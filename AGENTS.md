@@ -52,6 +52,7 @@ These hold until the maintainer decides otherwise (then update this file, see be
   `"write"` paths also ask for `protectedPaths` (names matched at any depth, in the path as given and
   where it leads, without case; non-ASCII write paths ask) and the config file,
   which make code run later or decide what is allowed. Matching entries add up their checks.
+  A `"read"` path that doesn't exist asks, since pi's `read` then tries other spellings of it.
   `bash` can't be listed: it has its own rules.
 - **Shell parsing.** `parseBashCommands` splits a line into commands and words, removing quotes and
   escapes like bash/zsh do. Anything it doesn't fully understand (`$`, backticks, redirections,

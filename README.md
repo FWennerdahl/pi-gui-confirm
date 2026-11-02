@@ -49,6 +49,8 @@ as file paths:
 - A declared path must be inside the session folder; a `"write"` path must not be protected either
   (see below). A missing path means the session folder (pi's `grep`, `find` and `ls` default to it);
   a value that isn't text asks.
+- A `"read"` path that doesn't exist asks: pi's `read` then tries other spellings of it (`'` as `’`)
+  that weren't checked.
 - Paths are resolved the way pi's own tools resolve them (a leading `@` is dropped, `~` and
   `file://` URLs are expanded) and written back into the tool call, so the tool uses exactly the
   path that was checked. Symlinks are followed: `link/x` with `link` pointing outside asks, and so

@@ -509,7 +509,7 @@ describe("allowed tools", () => {
     const input = { path: "@stubs/package.scala" };
     assert.equal(await allowed("read", input), true);
     assert.equal(input.path, join(repo, "stubs", "package.scala")); // the tool reads exactly this
-    assert.equal(await allowed("read", { path: ".git/config" }), true); // read paths aren't protected
+    assert.equal(await allowed("read", { path: ".git/hooks" }), true); // read paths aren't protected
     assert.equal(await allowed("edit", { path: "stubs/x.ts", edits: [{ newText: "/** doc */" }] }), true);
     assert.equal(await allowed("edit", { path: ".git/config" }), false); // write paths are
   });
@@ -517,12 +517,13 @@ describe("allowed tools", () => {
   test("a missing path means the session folder, a value that isn't text asks", async () => {
     assert.equal(await allowed("read", {}), true);
     assert.equal(await allowed("read", { path: 42 }), false);
+    assert.equal(await allowed("read", { path: "stubs/missing.txt" }), false); // pi would try spelling variants
   });
 
   test("several declared paths are all checked", async () => {
-    assert.equal(await allowed("mcp__files__copy", { source: "stubs/a", destination: "stubs/b" }), true);
+    assert.equal(await allowed("mcp__files__copy", { source: "stubs/package.scala", destination: "stubs/b" }), true);
     assert.equal(await allowed("mcp__files__copy", { source: "/etc/passwd", destination: "stubs/b" }), false);
-    assert.equal(await allowed("mcp__files__copy", { source: "stubs/a", destination: ".git/hooks/x" }), false);
+    assert.equal(await allowed("mcp__files__copy", { source: "stubs/package.scala", destination: ".git/hooks/x" }), false);
   });
 
   test("matching entries add up their checks", async () => {
