@@ -9,7 +9,7 @@ It enforces confirmation in Pi itself, so it doesn't depend on the model followi
 
 | File | Purpose |
 |---|---|
-| `pi-gui-confirm.ts` | The extension: config loading, shell command parser, bash check, dialog |
+| `pi-gui-confirm.ts` | The extension: config loading, tool path checks, shell command parser, bash check, dialog |
 | `pi-gui-confirm.json` | The user's allow lists (read on every tool call) |
 | `bash-summary.ts` | Optional: replaces the bash tool with one that takes a `summary` for the dialog title |
 | `pi-gui-confirm.test.ts` | Tests for the core: parser, bash check, tool paths, config (`node:test`) |
@@ -42,8 +42,8 @@ These hold until the maintainer decides otherwise (then update this file, see be
 - **Fail safe.** When the check can't tell, it asks. Never widen what is allowed to avoid a prompt;
   an extra prompt is always the acceptable failure. Whatever the config doesn't explicitly allow
   asks.
-- **Allowed tools** (`allowedTools`): a tool that isn't listed asks. An entry allows a tool and may
-  declare which arguments are file paths, read or written. Only declared arguments are checked;
+- **Allowed tools** (`allowedTools`): an entry allows a tool and may declare which arguments are
+  file paths, read or written. Only declared arguments are checked;
   undeclared ones are trusted, since the extension can only check what it is told about. Declared
   paths are resolved like pi's own tools (`resolveToolPath` mimics pi's internal `resolveToCwd`
   until pi exports it) and written back into the tool call, so the tool uses exactly the checked

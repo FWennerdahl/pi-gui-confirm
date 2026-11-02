@@ -1,6 +1,7 @@
 /**
- * Tests for the shell command check in pi-gui-confirm.ts. Run with `npm test` (Node 22.18 or later runs
- * TypeScript directly). Uses fixture folders in a temporary folder:
+ * Tests for the core checks in pi-gui-confirm.ts: the shell command parser and check, tool paths, and
+ * the config. Run with `npm test` (Node 22.18 or later runs TypeScript directly). Uses fixture
+ * folders in a temporary folder:
  *   repo/                   the session folder
  *   repo/stubs/package.scala
  *   repo/.git/hooks/
@@ -153,7 +154,7 @@ describe("parser", () => {
   }
 });
 
-describe("paths", () => {
+describe("shell command paths", () => {
   cases([
     ["ls", true],
     ["ls stubs", true],
@@ -406,7 +407,7 @@ describe("tool paths", () => {
     assert.equal(allowed("read", "@/etc/passwd"), false); // pi strips the @
     assert.equal(allowed("read", "file:///etc/passwd"), false);
     assert.equal(allowed("read", "link/x"), false); // through a symlink pointing outside
-    assert.equal(allowed("read", ".git/config"), true); // protected paths only apply to writing tools
+    assert.equal(allowed("read", ".git/config"), true); // protected paths only apply to write paths
   });
 
   test("writes must be inside and not protected", () => {
@@ -468,7 +469,6 @@ describe("allowed tools", () => {
     const input = { path: "@stubs/package.scala" };
     assert.equal(await allowed("read", input), true);
     assert.equal(input.path, join(repo, "stubs", "package.scala")); // the tool reads exactly this
-    assert.equal(await allowed("read", { path: "/etc/passwd" }), false);
     assert.equal(await allowed("read", { path: ".git/config" }), true); // read paths aren't protected
     assert.equal(await allowed("edit", { path: "stubs/x.ts", edits: [{ newText: "/** doc */" }] }), true);
     assert.equal(await allowed("edit", { path: ".git/config" }), false); // write paths are
@@ -486,9 +486,9 @@ describe("allowed tools", () => {
   });
 
   test("matching entries add up their checks", async () => {
-    // mcp__files__* declares nothing, but the specific entries for these tools still apply.
-    assert.equal(await allowed("mcp__files__copy", { source: "/etc/passwd", destination: "x" }), false);
-    // file is declared "read" in one entry and "write" in another: "write" wins, so .git asks.
+    // mcp__files__* (no paths) also matches the tools above and below: their declared paths are still
+    // checked, as the copy tests show. Here, file is declared "read" in one entry and "write" in
+    // another: "write" wins, so .git asks.
     assert.equal(await allowed("mcp__files__write_file", { file: ".git/config" }), false);
     assert.equal(await allowed("mcp__files__write_file", { file: "stubs/x" }), true);
   });

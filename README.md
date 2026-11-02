@@ -29,10 +29,6 @@ immediately.
 | `excludedBashCommands` | Shell commands that ask even if allowed above, as `{ "pattern": …, "reason": … }`: a regular expression, and why it asks. Omit the reason (or leave it empty) to report the pattern instead. |
 | `bashValidators` | Command names mapped to validators in `validators/`, e.g. `{ "grep": "grep" }`. See below. |
 
-Shell command lines are split at `|`, `&`, `;`, `&&`, `||` and newlines, and every command must be
-allowed. Patterns are matched against each command with quotes and escapes removed and words joined
-by single spaces. Lines with `$`, backticks, `>`, `<`, `(`, `)`, `{` or `}` always ask.
-
 ### Allowed tools and their paths
 
 A tool that isn't in `allowedTools` asks. An entry allows a tool, and declares the arguments it uses
@@ -68,6 +64,10 @@ hooks and `core.fsmonitor` from `.git`, pi loads extensions from `.pi`, direnv r
 `package.json` scripts, and the config file decides what is allowed.
 
 ### Paths in shell commands
+
+Shell command lines are split at `|`, `&`, `;`, `&&`, `||` and newlines, and every command must be
+allowed. Patterns are matched against each command with quotes and escapes removed and words joined
+by single spaces. Lines with `$`, backticks, `>`, `<`, `(`, `)`, `{` or `}` always ask.
 
 An allowed command also needs every argument that could be a path to stay inside the session folder.
 Which arguments a program reads as paths isn't known, so every argument is checked as if it were one:
@@ -117,7 +117,7 @@ Included:
   `--dereference-recursive` ask, since they follow symlinks while recursing.
 - `any-arguments`: allows any arguments, without checking them at all. For commands you trust with
   any arguments, where even the automatic path check of `allowedBashCommands` is unwanted, like `echo`
-  and `pwd` (`echo /etc` just prints `/etc`). Globs, the folder and exclusions are still checked.
+  and `pwd` (`echo /etc` just prints `/etc`).
 
 To add one, create `validators/<name>.ts` with a default export of type `BashValidator`
 (`validators/types.ts`): it gets the command's arguments and the core's path checks, and returns
