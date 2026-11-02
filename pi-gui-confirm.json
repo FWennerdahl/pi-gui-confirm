@@ -7,6 +7,8 @@
     { "name": "mcp__slack__slack_read_thread" },
     { "name": "mcp__slack__slack_read_file" },
     { "name": "mcp__linear__get_issue" },
+    { "name": "mcp__grafana__query_loki_logs"},
+    { "name": "mcp__grafana__list_loki_label_values"},
     { "name": "read", "paths": { "path": "read" } },
     { "name": "grep", "paths": { "path": "read" } },
     { "name": "find", "paths": { "path": "read" } },
