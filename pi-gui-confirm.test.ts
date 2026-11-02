@@ -22,6 +22,7 @@ import {
   parseBashCommands,
   resolveToolPath,
   shellIsSupported,
+  toolCallIsAllowed,
   toolPathIsAllowed,
 } from "./pi-gui-confirm.ts";
 
@@ -396,8 +397,8 @@ describe("tool paths are resolved like pi does", () => {
 describe("tool paths", () => {
   const protectedPaths = [".git", ".pi", ".envrc", "package.json"];
   const configFile = () => join(repo, "stubs", "package.scala"); // stands in for pi-gui-confirm.json
-  const allowed = (tool: string, path: string) =>
-    toolPathIsAllowed(tool, resolveToolPath(path, repo)!, repo, protectedPaths, [configFile()]);
+  const allowed = (access: "read" | "write", path: string) =>
+    toolPathIsAllowed(access, resolveToolPath(path, repo)!, repo, protectedPaths, [configFile()]);
 
   test("reads must be inside the session folder", () => {
     assert.equal(allowed("read", "stubs/package.scala"), true);
@@ -405,17 +406,17 @@ describe("tool paths", () => {
     assert.equal(allowed("read", "@/etc/passwd"), false); // pi strips the @
     assert.equal(allowed("read", "file:///etc/passwd"), false);
     assert.equal(allowed("read", "link/x"), false); // through a symlink pointing outside
-    assert.equal(allowed("read", ".git/config"), true); // protected paths only apply to edits and writes
+    assert.equal(allowed("read", ".git/config"), true); // protected paths only apply to writing tools
   });
 
-  test("edits and writes must be inside and not protected", () => {
+  test("writes must be inside and not protected", () => {
     assert.equal(allowed("write", "stubs/new.ts"), true);
-    assert.equal(allowed("edit", "stubs/package.scala"), false); // the config file is always protected
+    assert.equal(allowed("write", "stubs/package.scala"), false); // the config file is always protected
     assert.equal(allowed("write", "link/new.txt"), false); // a new file in a symlinked folder is outside
     assert.equal(allowed("write", "new-folder/x.ts"), true); // a new folder inside is fine
-    assert.equal(allowed("edit", ".git/config"), false);
+    assert.equal(allowed("write", ".git/config"), false);
     assert.equal(allowed("write", "sub/.git/hooks/pre-commit"), false); // names match at any depth
-    assert.equal(allowed("edit", "packages/api/package.json"), false);
+    assert.equal(allowed("write", "packages/api/package.json"), false);
     assert.equal(allowed("write", ".envrc"), false);
     assert.equal(allowed("write", "my.git.txt"), true); // only whole names match
   });
@@ -428,11 +429,79 @@ describe("tool paths", () => {
     assert.equal(allowed("read", "hooks/pre-commit"), true);
     assert.equal(allowed("write", "hooks/pre-commit"), false);
     // settings.json -> the config file.
-    assert.equal(allowed("edit", "settings.json"), false);
+    assert.equal(allowed("write", "settings.json"), false);
   });
 
   test("protectedPaths must be names", async () => {
     await assert.rejects(parseAllowList({ protectedPaths: [".git/"] }), /names without \//);
     await assert.rejects(parseAllowList({ protectedPaths: [""] }), /names without \//);
+  });
+});
+
+describe("allowed tools", () => {
+  const configFile = () => join(repo, "stubs", "package.scala"); // stands in for pi-gui-confirm.json
+  const config = {
+    allowedTools: [
+      { name: "list_threads" },
+      { name: "mcp__files__*" },
+      { name: "read", paths: { path: "read" } },
+      { name: "edit", paths: { path: "write" } },
+      { name: "mcp__files__copy", paths: { source: "read", destination: "write" } },
+      { name: "mcp__files__write_file", paths: { file: "read" } },
+      { name: "mcp__files__write_file", paths: { file: "write" } },
+    ],
+    protectedPaths: [".git"],
+  };
+  const allowed = async (tool: string, input: Record<string, unknown>) =>
+    toolCallIsAllowed(tool, input, await parseAllowList(config), repo, [configFile()]);
+
+  test("tools that aren't listed ask", async () => {
+    assert.equal(await allowed("write", { path: "stubs/x" }), false);
+  });
+
+  test("tools without declared paths are allowed as they are", async () => {
+    assert.equal(await allowed("list_threads", {}), true);
+    assert.equal(await allowed("mcp__files__list", { path: "/etc" }), true); // undeclared arguments aren't checked
+  });
+
+  test("declared paths are checked, and written back resolved", async () => {
+    const input = { path: "@stubs/package.scala" };
+    assert.equal(await allowed("read", input), true);
+    assert.equal(input.path, join(repo, "stubs", "package.scala")); // the tool reads exactly this
+    assert.equal(await allowed("read", { path: "/etc/passwd" }), false);
+    assert.equal(await allowed("read", { path: ".git/config" }), true); // read paths aren't protected
+    assert.equal(await allowed("edit", { path: "stubs/x.ts", edits: [{ newText: "/** doc */" }] }), true);
+    assert.equal(await allowed("edit", { path: ".git/config" }), false); // write paths are
+  });
+
+  test("a missing path means the session folder, a value that isn't text asks", async () => {
+    assert.equal(await allowed("read", {}), true);
+    assert.equal(await allowed("read", { path: 42 }), false);
+  });
+
+  test("several declared paths are all checked", async () => {
+    assert.equal(await allowed("mcp__files__copy", { source: "stubs/a", destination: "stubs/b" }), true);
+    assert.equal(await allowed("mcp__files__copy", { source: "/etc/passwd", destination: "stubs/b" }), false);
+    assert.equal(await allowed("mcp__files__copy", { source: "stubs/a", destination: ".git/hooks/x" }), false);
+  });
+
+  test("matching entries add up their checks", async () => {
+    // mcp__files__* declares nothing, but the specific entries for these tools still apply.
+    assert.equal(await allowed("mcp__files__copy", { source: "/etc/passwd", destination: "x" }), false);
+    // file is declared "read" in one entry and "write" in another: "write" wins, so .git asks.
+    assert.equal(await allowed("mcp__files__write_file", { file: ".git/config" }), false);
+    assert.equal(await allowed("mcp__files__write_file", { file: "stubs/x" }), true);
+  });
+
+  test("invalid entries make the config invalid", async () => {
+    const invalid = (entry: unknown) => parseAllowList({ allowedTools: [entry] });
+    await assert.rejects(invalid("read"), /must be \{ "name"/); // a plain string isn't enough
+    await assert.rejects(invalid({ paths: {} }), /must be \{ "name"/);
+    await assert.rejects(invalid({ name: "read", path: { path: "read" } }), /must be \{ "name"/); // typo
+    await assert.rejects(invalid({ name: "read", paths: { path: "execute" } }), /"read" or "write"/);
+    await assert.rejects(invalid({ name: "read", paths: ["path"] }), /"read" or "write"/);
+    await assert.rejects(invalid({ name: "bash" }), /can't include bash/);
+    await assert.rejects(invalid({ name: "*" }), /can't include bash/); // a wildcard covering bash too
+    await assert.rejects(parseAllowList({ allowedTools: "read" }), /must be an array/);
   });
 });

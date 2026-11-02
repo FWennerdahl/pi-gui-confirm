@@ -3,10 +3,10 @@
  * Enforces confirmation in Pi itself, so it doesn't rely on the model following instructions.
  *
  * pi-gui-confirm.json (next to this file):
- *   alwaysAllow                 tool names that never ask
- *   allowInsideWorkingDirectory tool names that don't ask when their `path` is inside the session folder
- *     (tool names may use `*` as a wildcard, e.g. "mcp__grafana__get_*")
- *   protectedPaths              file and folder names that edit and write always ask for (".git", ".envrc"),
+ *   allowedTools                tools that don't ask: { "name": tool name (`*` is a wildcard),
+ *                               "paths": { argument name: "read" | "write" } (optional) }. Declared
+ *                               arguments are file paths that must be inside the session folder
+ *   protectedPaths              file and folder names that "write" paths always ask for (".git", ".envrc"),
  *                               at any depth; this config file is always protected too
  *   allowedBashCommands         regular expressions for shell commands that don't ask, as long as
  *                               every argument that could be a path stays inside the session folder
@@ -25,10 +25,20 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { BashValidator, ValidatorHelpers } from "./validators/types.ts";
 
+/** How a tool uses a file path argument. "write" paths also ask for protected paths. */
+export type PathUse = "read" | "write";
+
+/** An entry in allowedTools. */
+export interface ToolRule {
+  /** Tool name; `*` is a wildcard, e.g. "mcp__grafana__get_*". */
+  name: string;
+  /** Argument name → how the tool uses that argument as a file path. */
+  paths: Record<string, PathUse>;
+}
+
 export interface AllowList {
-  alwaysAllow: string[];
-  allowInsideWorkingDirectory: string[];
-  /** Names that edit and write always ask for, wherever they appear in the path. */
+  allowedTools: ToolRule[];
+  /** Names that writing tools always ask for, wherever they appear in the path. */
   protectedPaths: string[];
   allowedBashCommands: RegExp[];
   excludedBashCommands: Exclusion[];
@@ -37,16 +47,12 @@ export interface AllowList {
 }
 
 const NOTHING_ALLOWED: AllowList = {
-  alwaysAllow: [],
-  allowInsideWorkingDirectory: [],
+  allowedTools: [],
   protectedPaths: [],
   allowedBashCommands: [],
   excludedBashCommands: [],
   bashValidators: new Map(),
 };
-
-// Tools that change files: protectedPaths apply to them.
-const WRITING_TOOLS = new Set(["edit", "write"]);
 
 function configPath(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "pi-gui-confirm.json");
@@ -58,6 +64,36 @@ function stringList(value: unknown, field: string): string[] {
     throw new Error(`"${field}" must be an array of strings`);
   }
   return value;
+}
+
+/**
+ * Reads allowedTools: every entry is { "name": …, "paths": { argument: "read" | "write" } }, paths
+ * optional. bash can't be listed: an entry would bypass the whole shell check (allowedBashCommands).
+ */
+function toolRuleList(value: unknown, field: string): ToolRule[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new Error(`"${field}" must be an array`);
+  return value.map((entry) => {
+    const isObject = typeof entry === "object" && entry !== null && !Array.isArray(entry);
+    // No other keys, so a typo like "path" for "paths" doesn't go unnoticed.
+    if (
+      !isObject ||
+      typeof entry.name !== "string" ||
+      entry.name === "" ||
+      !Object.keys(entry).every((key) => key === "name" || key === "paths")
+    ) {
+      throw new Error(`"${field}" entries must be { "name": …, "paths": … }: ${JSON.stringify(entry)}`);
+    }
+    if (matchesAny([entry.name], "bash")) {
+      throw new Error(`"${field}" can't include bash ("${entry.name}"): allow shell commands in allowedBashCommands`);
+    }
+    const paths = entry.paths ?? {};
+    const isMap = typeof paths === "object" && paths !== null && !Array.isArray(paths);
+    if (!isMap || !Object.values(paths).every((use) => use === "read" || use === "write")) {
+      throw new Error(`"${field}": "paths" must map argument names to "read" or "write": ${JSON.stringify(entry)}`);
+    }
+    return { name: entry.name, paths };
+  });
 }
 
 /** Reads protectedPaths: plain names (".git", "package.json"), matched against every part of a path. */
@@ -141,8 +177,7 @@ async function loadValidators(value: unknown): Promise<Map<string, BashValidator
 /** Checks a parsed config, compiles its patterns and loads its validators. Throws if it is invalid. */
 export async function parseAllowList(config: any): Promise<AllowList> {
   return {
-    alwaysAllow: stringList(config.alwaysAllow, "alwaysAllow"),
-    allowInsideWorkingDirectory: stringList(config.allowInsideWorkingDirectory, "allowInsideWorkingDirectory"),
+    allowedTools: toolRuleList(config.allowedTools, "allowedTools"),
     protectedPaths: nameList(config.protectedPaths, "protectedPaths"),
     allowedBashCommands: regexList(config.allowedBashCommands, "allowedBashCommands"),
     excludedBashCommands: exclusionList(config.excludedBashCommands, "excludedBashCommands"),
@@ -483,19 +518,64 @@ export function resolveToolPath(path: string, cwd: string): string | undefined {
 }
 
 /**
- * Whether a tool may use `target` without asking: it must be inside the session folder `root`. Edit
- * and write must also stay away from protected paths: a name from protectedPaths anywhere in the path
- * (.git/hooks/x, packages/a/package.json), or one of `configFiles`, so they can't change what is allowed.
+ * The file path arguments of a tool, collected from every allowedTools entry that matches its name, or
+ * undefined if none does (the tool isn't allowed). Entries add up: for an argument declared both
+ * "read" and "write", "write" wins. So an entry can only add checks, never remove them.
+ */
+export function toolPathDeclarations(toolName: string, allowList: AllowList): Map<string, PathUse> | undefined {
+  const rules = allowList.allowedTools.filter((rule) => matchesAny([rule.name], toolName));
+  if (rules.length === 0) return undefined;
+  const declarations = new Map<string, PathUse>();
+  for (const rule of rules) {
+    for (const [argument, use] of Object.entries(rule.paths)) {
+      if (declarations.get(argument) !== "write") declarations.set(argument, use);
+    }
+  }
+  return declarations;
+}
+
+/**
+ * Whether a tool call is allowed without asking: an allowedTools entry matches it, and every declared
+ * path argument passes its check. The arguments are resolved like pi's tools do and written back into
+ * `input`, so the tool uses exactly the checked paths. A missing argument means the session folder
+ * (pi's grep, find and ls default to it); a value that isn't text asks.
+ */
+export function toolCallIsAllowed(
+  toolName: string,
+  input: Record<string, unknown>,
+  allowList: AllowList,
+  root: string,
+  configFiles: string[],
+): boolean {
+  const declarations = toolPathDeclarations(toolName, allowList);
+  if (declarations === undefined) return false;
+  for (const [argument, use] of declarations) {
+    const value = input[argument];
+    if (value !== undefined && typeof value !== "string") return false;
+    const target = resolveToolPath(value ?? ".", root);
+    if (target === undefined) return false;
+    // The tool then uses exactly the path that was checked, even if pi's own rules change.
+    if (value !== undefined) input[argument] = target;
+    if (!toolPathIsAllowed(use, target, root, allowList.protectedPaths, configFiles)) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether a tool may use `target` without asking: it must be inside the session folder `root`. A
+ * "write" path must also stay away from protected paths: a name from protectedPaths anywhere in the
+ * path (.git/hooks/x, packages/a/package.json), or one of `configFiles`, so it can't change what is
+ * allowed.
  */
 export function toolPathIsAllowed(
-  toolName: string,
+  use: PathUse,
   target: string,
   root: string,
   protectedPaths: string[],
   configFiles: string[],
 ): boolean {
   if (!isInside(root, target)) return false;
-  if (!WRITING_TOOLS.has(toolName)) return true;
+  if (use === "read") return true;
   const real = realOrResolved(target);
   if (configFiles.some((file) => realOrResolved(file) === real)) return false;
   const parts = relative(realOrResolved(root), real).split(sep);
@@ -545,23 +625,13 @@ export default function (pi: ExtensionAPI) {
 
     const input = event.input as Record<string, unknown>;
 
-    if (matchesAny(allowList.alwaysAllow, event.toolName)) return undefined;
-    if (matchesAny(allowList.allowInsideWorkingDirectory, event.toolName)) {
-      // Pi's grep/find/ls default to the working directory when no path is given.
-      const target = resolveToolPath(typeof input.path === "string" ? input.path : ".", ctx.cwd);
-      if (target !== undefined) {
-        // The tool then uses exactly the path that was checked, even if pi's own rules change.
-        if (typeof input.path === "string") input.path = target;
-        if (toolPathIsAllowed(event.toolName, target, ctx.cwd, allowList.protectedPaths, [configPath()])) {
-          return undefined;
-        }
-      }
-    }
     if (event.toolName === "bash") {
       const commands = parseBashCommands(String(input.command ?? ""));
       if (commands && shellIsSupported(ctx.cwd) && bashIsAllowed(commands, allowList, ctx.cwd)) {
         return undefined;
       }
+    } else if (toolCallIsAllowed(event.toolName, input, allowList, ctx.cwd, [configPath()])) {
+      return undefined;
     }
 
     if (!ctx.hasUI) {

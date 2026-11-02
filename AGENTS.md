@@ -12,9 +12,9 @@ It enforces confirmation in Pi itself, so it doesn't depend on the model followi
 | `pi-gui-confirm.ts` | The extension: config loading, shell command parser, bash check, dialog |
 | `pi-gui-confirm.json` | The user's allow lists (read on every tool call) |
 | `bash-summary.ts` | Optional: replaces the bash tool with one that takes a `summary` for the dialog title |
-| `pi-gui-confirm.test.ts` | Tests for the parser and the bash check (`node:test`) |
+| `pi-gui-confirm.test.ts` | Tests for the core: parser, bash check, tool paths, config (`node:test`) |
 | `validators/` | Per-command validators (`grep.ts`, `any-arguments.ts`), their contract (`types.ts`) and their tests |
-| `README.md` | User documentation: config fields and the rules for shell commands |
+| `README.md` | User documentation: config fields and the rules for tool calls and shell commands |
 | `TODO.md` | Open work and ideas |
 
 ## Working with the maintainer
@@ -23,8 +23,6 @@ It enforces confirmation in Pi itself, so it doesn't depend on the model followi
   recommend one option. Implement only when asked.
 - Prefer the simplest design that is safe. If a design grows complex, stop and say so; the simpler
   option is often the right one.
-- Don't commit, don't create branches, don't stash or otherwise touch git state. The maintainer
-  reviews the diff and commits. If a command would change git state, say so first.
 - Before running something non-obvious (scripts, anything outside the repo), say what and why.
 
 ## Human readability
@@ -43,13 +41,16 @@ These hold until the maintainer decides otherwise (then update this file, see be
 
 - **Fail safe.** When the check can't tell, it asks. Never widen what is allowed to avoid a prompt;
   an extra prompt is always the acceptable failure. Whatever the config doesn't explicitly allow
-  asks; no tool is special-cased.
-- **Tool paths** (tools in `allowInsideWorkingDirectory`) are resolved like pi's own tools
-  (`resolveToolPath` mimics pi's internal `resolveToCwd` until pi exports it) and written back into
-  the tool call, so the tool uses exactly the checked path. Symlinks are followed, for paths that
-  don't exist yet through their nearest existing folder. `edit` and `write` also ask for
-  `protectedPaths` (names matched at any depth) and the config file, which make code run later or
-  decide what is allowed.
+  asks.
+- **Allowed tools** (`allowedTools`): a tool that isn't listed asks. An entry allows a tool and may
+  declare which arguments are file paths, read or written. Only declared arguments are checked;
+  undeclared ones are trusted, since the extension can only check what it is told about. Declared
+  paths are resolved like pi's own tools (`resolveToolPath` mimics pi's internal `resolveToCwd`
+  until pi exports it) and written back into the tool call, so the tool uses exactly the checked
+  path. Symlinks are followed, for paths that don't exist yet through their nearest existing folder.
+  `"write"` paths also ask for `protectedPaths` (names matched at any depth) and the config file,
+  which make code run later or decide what is allowed. Matching entries add up their checks.
+  `bash` can't be listed: it has its own rules.
 - **Shell parsing.** `parseBashCommands` splits a line into commands and words, removing quotes and
   escapes like bash/zsh do. Anything it doesn't fully understand (`$`, backticks, redirections,
   subshells, groups, syntax errors, unusual whitespace) makes the whole line ask.
@@ -64,7 +65,7 @@ These hold until the maintainer decides otherwise (then update this file, see be
   that only look like outside paths ask (`grep -r "/api/" .`), unless the command has a validator.
 - **Validators** (`validators/<name>.ts`, enabled per command in `bashValidators`) decide about one
   command instead of `allowedBashCommands` and the generic check, and may allow or reject for any
-  reason, with a reason. The core still applies first: the parser, the folder tracking, unquoted
+  reason, and say why. The core still applies first: the parser, the folder tracking, unquoted
   globs, and `excludedBashCommands` (always an override). A validator gets only the arguments, so
   one validator can serve several command names. Validators are loaded by dynamic `import()`, so a
   new one needs only a file and a config entry. They must be conservative: where they can't tell

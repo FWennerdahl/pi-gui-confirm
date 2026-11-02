@@ -1,7 +1,7 @@
 # pi-gui-confirm
 
 A [Pi](https://pi.dev) extension that asks for confirmation before tool calls, with allowlists for
-read-only tools and shell commands. Built for pi-gui; also works in terminal Pi.
+tools and shell commands. Built for pi-gui; also works in terminal Pi.
 
 ## Install
 
@@ -23,9 +23,8 @@ immediately.
 
 | Field | Meaning |
 |---|---|
-| `alwaysAllow` | Tool names that never ask. `*` is a wildcard, e.g. `"mcp__grafana__get_*"`. |
-| `allowInsideWorkingDirectory` | Tool names that don't ask when their `path` is inside the session folder (no path means the session folder). Add `edit` and `write` to allow changing files there; see below. |
-| `protectedPaths` | Names that `edit` and `write` always ask for, wherever they appear in the path, e.g. `[".git", ".pi", ".envrc", "package.json"]`. |
+| `allowedTools` | Tools that don't ask, as `{ "name": …, "paths": … }`. `name` may use `*` as a wildcard, e.g. `"mcp__grafana__get_*"`. `paths` (optional) declares which arguments are file paths and whether the tool reads or writes them, e.g. `{ "path": "read" }`. See below. |
+| `protectedPaths` | Names that `"write"` paths always ask for, wherever they appear in the path, e.g. `[".git", ".pi", ".envrc", "package.json"]`. |
 | `allowedBashCommands` | Regular expressions for shell commands that don't ask. A pattern must match the whole command. |
 | `excludedBashCommands` | Shell commands that ask even if allowed above, as `{ "pattern": …, "reason": … }`: a regular expression, and why it asks. Omit the reason (or leave it empty) to report the pattern instead. |
 | `bashValidators` | Command names mapped to validators in `validators/`, e.g. `{ "grep": "grep" }`. See below. |
@@ -34,14 +33,35 @@ Shell command lines are split at `|`, `&`, `;`, `&&`, `||` and newlines, and eve
 allowed. Patterns are matched against each command with quotes and escapes removed and words joined
 by single spaces. Lines with `$`, backticks, `>`, `<`, `(`, `)`, `{` or `}` always ask.
 
-### Paths in tool calls
+### Allowed tools and their paths
 
-For tools in `allowInsideWorkingDirectory`, the `path` is resolved the way pi's own tools resolve it
-(a leading `@` is dropped, `~` and `file://` URLs are expanded) and written back into the tool call,
-so the tool uses exactly the path that was checked. Symlinks are followed: `link/x` with `link`
-pointing outside asks, and so does a new file in such a folder (`write link/new.txt`).
+A tool that isn't in `allowedTools` asks. An entry allows a tool, and declares the arguments it uses
+as file paths:
 
-`edit` and `write` also ask for protected paths, even inside the session folder: names from
+```json
+"allowedTools": [
+  { "name": "list_threads" },
+  { "name": "read", "paths": { "path": "read" } },
+  { "name": "edit", "paths": { "path": "write" } },
+  { "name": "mcp__files__copy", "paths": { "source": "read", "destination": "write" } }
+]
+```
+
+- Without `paths`, the tool is allowed as it is: no argument is checked. Only the arguments the
+  extension is told about can be checked, so a tool that reaches files in other ways (a file ID, an
+  MCP server's own process) isn't caught by anything.
+- A declared path must be inside the session folder; a `"write"` path must not be protected either
+  (see below). A missing path means the session folder (pi's `grep`, `find` and `ls` default to it);
+  a value that isn't text asks.
+- Paths are resolved the way pi's own tools resolve them (a leading `@` is dropped, `~` and
+  `file://` URLs are expanded) and written back into the tool call, so the tool uses exactly the
+  path that was checked. Symlinks are followed: `link/x` with `link` pointing outside asks, and so
+  does a new file in such a folder (`link/new.txt`).
+- If several entries match a tool, all their declared paths are checked; an argument declared both
+  `"read"` and `"write"` counts as `"write"`. An entry can add checks, never remove them.
+- `bash` can't be listed: shell commands have their own rules (below).
+
+`"write"` paths also ask for protected paths, even inside the session folder: names from
 `protectedPaths` anywhere in the path (`.git/hooks/pre-commit`, `packages/api/package.json`), and
 this extension's config file. They protect files that make code run later without asking: git runs
 hooks and `core.fsmonitor` from `.git`, pi loads extensions from `.pi`, direnv runs `.envrc`, npm runs
@@ -72,10 +92,10 @@ Which arguments a program reads as paths isn't known, so every argument is check
   for certain and goes to an existing folder; otherwise every later command asks
   (e.g. `grep -q x f && cd stubs; ls ..`).
 
-This only limits where commands look, not what they do: leave out commands that write or run other
-programs, and flags that follow symlinks while recursing (`grep -R`, `ls -L`), e.g. with
-`excludedBashCommands`. Paths that don't exist are judged by their text, so don't allow commands that
-create files (`touch`, `mkdir`): `touch link/new` would create a file outside through a symlink.
+This only limits where commands look, not what they do: leave out flags that follow symlinks while
+recursing (`ls -L`), e.g. with `excludedBashCommands`, and don't allow commands that create or change
+files (`touch`, `cp`, `mkdir`): `protectedPaths` only applies to `"write"` paths of tools, so
+`cp x .git/hooks/pre-commit` would pass the path check.
 
 ### Validators
 
@@ -103,12 +123,16 @@ To add one, create `validators/<name>.ts` with a default export of type `BashVal
 (`validators/types.ts`): it gets the command's arguments and the core's path checks, and returns
 `{ allowed: true }` or `{ allowed: false, reason }`.
 
+### Shell environment
+
 Every shell command asks when `BASH_ENV` is set, or when `shellPath` is a shell other than bash or zsh.
 Trusted as your own configuration: `shellCommandPrefix` in Pi's settings and zsh's `~/.zshenv`. They
 run before every command and can change what a command name means (aliases, functions, `CDPATH`).
 
-Always:
-- If the config is missing or invalid, every tool call asks and a warning is shown.
+### Fallbacks
+
+- If the config is missing or invalid, every tool call asks and a warning is sent (terminal Pi shows
+  it; pi-gui may not).
 - Without a UI (print or JSON mode), calls that would ask are blocked.
 
 ## bash-summary (optional)

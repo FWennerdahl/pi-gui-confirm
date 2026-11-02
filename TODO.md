@@ -13,7 +13,7 @@ and in the block reason when there is no UI (print/JSON mode). Causes to cover:
   empty reasons are already replaced by one naming the pattern when the config is read).
 - An argument points outside the session folder (which word, and where it resolves to).
 - The folder a command runs in is unknown or outside, and which `cd` caused that.
-- For non-bash tools: not in `alwaysAllow`, or the path is outside the session folder.
+- For other tools: not in `allowedTools`, or a declared path is outside the session folder.
 
 This also lets the tests assert the cause, not just allowed/asks, so a case can't pass for the
 wrong reason.
@@ -60,10 +60,11 @@ override it with a `pi-gui-confirm.json` in the user's pi folder (`~/.pi/agent/`
 To decide:
 
 - Merge per field: does the user's list replace the default list, or add to it? Adding is handy for
-  `alwaysAllow`, but then a default can't be removed.
+  `allowedTools`, but then a default can't be removed.
 - If the user's file is invalid: every tool call asks, as today for an invalid config, with a warning
   that names the file.
 - Read both on every tool call, as today, so changes apply immediately.
+- Protect the user's config file from edits as well (`configFiles` in `toolPathIsAllowed`).
 
 ## Get a second review of the code base
 
