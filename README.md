@@ -75,8 +75,9 @@ writing `scripts/pre-commit` doesn't ask. Add such folders to `protectedPaths`.
 
 Shell command lines are split at `|`, `&`, `;`, `&&`, `||` and newlines, and every command must be
 allowed. Patterns are matched against each command with quotes and escapes removed and words joined
-by single spaces. Comments (`# …`) are skipped, as the shell does. Lines with `$`, backticks, `>`, `<`,
-`(`, `)`, `{` or `}` always ask.
+by single spaces. Comments (`# …`) are skipped, as the shell does. Lines with an unquoted `$`,
+backtick, `>`, `<`, `(`, `)`, `{` or `}` always ask, and so do `$` and backticks inside double quotes,
+where the shell still expands them. In single quotes or escaped (`'$HOME'`, `\$`), they're plain text.
 
 An allowed command also needs every argument that could be a path to stay inside the session folder.
 Which arguments a program reads as paths isn't known, so every argument is checked as if it were one:
