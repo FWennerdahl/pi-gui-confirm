@@ -104,22 +104,6 @@ after it: compiling the regexes, names in `protectedPaths` without `/`, loading 
 Add tests for the cases above, and update "Fallbacks" in README.md: unknown fields make the config
 invalid.
 
-## Get a second review of the code base
-
-The whole extension is security logic with many edge cases (`pi-gui-confirm.ts`, `bash-summary.ts`,
-`validators/`, the tests), and the code and its tests were written in the same session. Have it
-reviewed by a fresh session or another model, given only `README.md` and `AGENTS.md` as context,
-looking for:
-
-- tool calls that are allowed but shouldn't be:
-  - bash commands that read outside the session folder or run something unexpected (quoting,
-    escapes, globs, separators, `cd` tracking, zsh differences), and gaps in the validators;
-  - tool paths that end up somewhere other than checked (`resolveToolPath` copying pi's rules,
-    symlinks, paths that don't exist yet), and edits that reach protected paths or the config file;
-  - config handling: invalid configs that are accepted, or loading errors that allow anything;
-- test cases that pass for the wrong reason (easier once the check reports a cause, see above);
-- places where the code is hard to follow.
-
 ## Suggestions for pi
 
 Changes for pi itself (`@earendil-works/pi-coding-agent`), to propose or open a PR for, not for this
