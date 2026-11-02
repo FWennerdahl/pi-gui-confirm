@@ -113,6 +113,11 @@ describe("parser", () => {
     assert.deepEqual(words("echo '' \"\""), [["echo", "", ""]]);
   });
 
+  test("skips comments, but not # inside a word or quoted", () => {
+    assert.deepEqual(words("ls # x; cd y\nls .."), [["ls"], ["ls", ".."]]);
+    assert.deepEqual(words("echo a#b '#c' \\#d"), [["echo", "a#b", "#c", "#d"]]);
+  });
+
   test("hides whitespace inside quoted and escaped words", () => {
     assert.deepEqual(words("grep 'a b' \"c\td\" e\\ f"), [["grep", "a\uE000b", "c\uE001d", "e\uE000f"]]);
   });
@@ -224,6 +229,8 @@ describe("cd tracking", () => {
     ["cd stubs && ls ..", true],
     ["cd stubs\nls ..", true],
     ["cd stubs; cd ..; ls", true],
+    ["echo #; cd stubs\nls ..", false], // the cd is part of the comment, so ls runs in the session folder
+    ["cd stubs # go there\nls ..", true],
     ["cd stubs && ls ../..", false],
     ["cd missing; ls", false],
     ["cd stubs/package.scala; ls", false], // not a folder

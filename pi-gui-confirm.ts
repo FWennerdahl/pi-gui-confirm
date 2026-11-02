@@ -226,9 +226,9 @@ function unhide(text: string): string {
 }
 
 /**
- * Splits a shell command line into its commands (on |, &, ;, &&, || and newlines), with quotes and
- * escapes removed, or returns undefined if the line uses anything this check doesn't understand:
- * substitutions, variables, redirections, subshells, groups or syntax errors.
+ * Splits a shell command line into its commands (on |, &, ;, &&, || and newlines), with quotes,
+ * escapes and comments removed, or returns undefined if the line uses anything this check doesn't
+ * understand: substitutions, variables, redirections, subshells, groups or syntax errors.
  * Callers must treat undefined as "ask".
  */
 export function parseBashCommands(commandLine: string): ShellCommand[] | undefined {
@@ -312,6 +312,9 @@ export function parseBashCommands(commandLine: string): ShellCommand[] | undefin
       endCommand(separator);
     } else if (char === " " || char === "\t") {
       endWord();
+    } else if (char === "#" && !inWord) {
+      // A comment, up to the end of the line: "echo #; cd stubs" doesn't run the cd.
+      while (i + 1 < chars.length && chars[i + 1] !== "\n") i++;
     } else {
       if ("*?[".includes(char)) unquotedGlob = true;
       addChar(char, true);
